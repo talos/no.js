@@ -1,8 +1,13 @@
-## Open Gold
+# Open Gold
 
-#### incan gold proof-of-concept
+### incan gold proof-of-concept
 
 ---
+
+Download it:
+
+    cd /path/to/opengold
+    git clone git://github.com/talos/opengold.git
 
 Try out the simulation (random choice logic):
 
