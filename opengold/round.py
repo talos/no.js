@@ -12,13 +12,12 @@ class Round(object):
     a Round, and loot accumulates.
     """
 
-    def __init__(self, game, players, deck):
-        self.players = copy(players)
-        self.game = game
-        self.deck = deck
+    def __init__(self, players, deck):
+        self._players = copy(players)
+        self._deck = deck
 
-        self.table = []  # Cards on the table
-        self.pot = 0  # free points floating around
+        self._table = []  # Cards on the table
+        self._pot = 0  # free points floating around
 
         self._next_deal()
 
@@ -28,75 +27,84 @@ class Round(object):
         artifacts from table.  Take landos out of the round.
         """
 
-        loot = self.pot
-        for card in self.table:
+        loot = self._pot
+        for card in self._table:
             if isinstance(card, Treasure):
                 loot += card.value
-                self.table.remove(card)
-                self.deck.return_card(card)
+                self._table.remove(card)
+                self._deck.return_card(card)
             elif isinstance(card, Artifact):
-                self.table.remove(card)
+                self._table.remove(card)
                 if(len(landos) == 1):
-                    loot += self.deck.artifact_value()
+                    loot += self._deck.artifact_value()
                     landos[0].take_artifact(card)
-                else:
-                    #self.game.broadcast(card.destroyed)
-                    pass
 
         remainder = loot % len(landos)
         payout = (loot - remainder) / len(landos)
-        self.pot = remainder
+        self._pot = remainder
         for lando in landos:
             lando.take_gold(payout)
-            self.players.remove(lando)
-
-    def _is_over(self):
-        """
-        Returns True if this round is over, False otherwise.
-        """
-        hazards = []
-        for card in self.table:
-            if isinstance(card, Hazard):
-                if card.name in hazards:
-                    # for player in self.players:
-                    #     player.send(card.death)
-                    return True
-                else:
-                    hazards.append(card.name)
-        return False
+            self._players.remove(lando)
 
     def _next_deal(self):
         """
         Move round into new deal.
         """
-        dealt = self.deck.deal()
+        dealt = self._deck.deal()
         #self.game.broadcast(dealt.broadcast)
-        self.table.append(dealt)
-        self.deal = Deal(self.players)
+        self._table.append(dealt)
+        self._deal = Deal(self._players)
 
     def _return_cards_from_table(self):
         """
         Return cards from the table to the deck.
         """
-        for card in self.table:
-            self.deck.return_card(card)
+        for card in self._table:
+            self._deck.return_card(card)
+
+    @property
+    def players_in_play(self):
+        """
+        Return the players still in this round.
+        """
+        return self._players
+
+    @property
+    def deal(self):
+        """
+        Return the current deal.
+        """
+        return self._deal
 
     def submit(self, player, move):
         """
         Submit a player's move for this Deal.
 
-        Returns True if the round ended, False otherwise.
+        Returns True if their move was valid, False otherwise.
         """
-        if(self.deal.submit(player, move)):
-            if(len(self.deal.landos)):
-                self._split_loot(self.deal.landos)
+        valid_move = self._deal.submit(player, move)
+        if(valid_move):
+            if(self._deal.is_over()):
+                landos = self._deal.landos
+                if(len(landos) > 0):
+                   self._split_loot(landos)
 
-            self.game.broadcast_state(self, self.deal)
+                if(self._is_over()):
+                    self._return_cards_from_table()
+                else:
+                    self._next_deal()
 
-            if(self._is_over()):
-                self._return_cards_from_table()
-                return True
-            else:
-                self._next_deal()
+        return valid_move
 
+    def is_over(self):
+        """
+        Returns True if this round is over, False otherwise.
+        """
+        hazards = []
+        for card in self._table:
+            if isinstance(card, Hazard):
+                if card.name in hazards:
+                    return True
+                else:
+                    hazards.append(card.name)
         return False

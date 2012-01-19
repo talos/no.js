@@ -4,15 +4,27 @@ class Player(object):
     """
 
     def __init__(self, name):
-        self.name = name
-        self.artifacts = []
-        self.loot = 0
+        self._name = name
+        self._artifacts = []
+        self._loot = 0
 
     def take_artifact(self, artifact):
-        self.artifacts.append(artifact)
+        self._artifacts.append(artifact)
 
     def take_gold(self, loot):
-        self.loot += loot
+        self._loot += loot
 
-    def send(self, message):
-        print "'%s': %s" % (self.name, message)
+    # def send(self, message):
+    #     print "'%s': %s" % (self.name, message)
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def artifacts(self):
+        return self._artifacts
+
+    @property
+    def loot(self):
+        return self._loot
