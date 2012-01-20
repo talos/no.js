@@ -1,5 +1,3 @@
-#!/usr/env python
-
 from deal import Deal
 from deck import Hazard, \
                  Artifact, \
@@ -16,8 +14,9 @@ class Round(object):
         self._players = copy(players)
         self._deck = deck
 
-        self._table = []  # Cards on the table
-        self._pot = 0  # free points floating around
+        self._table = []
+        self._taken = []
+        self._pot = 0
 
         self._next_deal()
 
@@ -32,11 +31,12 @@ class Round(object):
             if isinstance(card, Treasure):
                 loot += card.value
                 self._table.remove(card)
+                self._taken.append(card)
                 self._deck.return_card(card)
             elif isinstance(card, Artifact):
                 self._table.remove(card)
                 if(len(landos) == 1):
-                    loot += self._deck.artifact_value()
+                    loot += self._deck.artifact_value
                     landos[0].take_artifact(card)
 
         remainder = loot % len(landos)
@@ -51,7 +51,6 @@ class Round(object):
         Move round into new deal.
         """
         dealt = self._deck.deal()
-        #self.game.broadcast(dealt.broadcast)
         self._table.append(dealt)
         self._deal = Deal(self._players)
 
@@ -89,7 +88,7 @@ class Round(object):
                 if(len(landos) > 0):
                    self._split_loot(landos)
 
-                if(self._is_over()):
+                if(self.is_over()):
                     self._return_cards_from_table()
                 else:
                     self._next_deal()
@@ -98,8 +97,12 @@ class Round(object):
 
     def is_over(self):
         """
-        Returns True if this round is over, False otherwise.
+        Returns True if this round is over because everyone left or
+        there were multiple hazards, False otherwise.
         """
+        if len(self._players) is 0:
+            return True
+
         hazards = []
         for card in self._table:
             if isinstance(card, Hazard):
@@ -108,3 +111,24 @@ class Round(object):
                 else:
                     hazards.append(card.name)
         return False
+
+    @property
+    def table(self):
+        """
+        A list of cards on the table.  All treasures here still have face value.
+        """
+        return self._table
+
+    @property
+    def pot(self):
+        """
+        The number of free points floating around
+        """
+        return self._pot
+
+    @property
+    def taken(self):
+        """
+        Treasures captured, kept on table for reference
+        """
+        return self._taken

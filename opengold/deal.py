@@ -20,7 +20,7 @@ class Deal(object):
 
         Return True if the move could be submitted, False otherwise.
         """
-        if((player.name in self._players.keys()) and
+        if((player.name in [p.name for p in self._players]) and
            (not player in self._hans) and
            (not player in self._landos)):
             if move == LANDO:

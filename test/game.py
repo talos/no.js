@@ -2,11 +2,9 @@
 Test game.py
 """
 
-from opengold.player import Player
 from opengold.game import Game
 #from random import choice
 import unittest
-
 
 class TestGame(unittest.TestCase):
 
@@ -16,14 +14,10 @@ class TestGame(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def test_needs_players(self):
-        g = Game('foo')
-        self.assertFalse(g.start())
-
     def test_needs_multiple_players(self):
         g = Game('forest')
         g.add_player('hermit')
-        self.assertFalse(g.start())
+        self.assertFalse(g.start('hermit'))
 
     def test_move_before_start(self):
         g = Game('duo')
@@ -31,25 +25,184 @@ class TestGame(unittest.TestCase):
         g.add_player('bar')
         self.assertFalse(g.submit('foo', 'han'))
 
+    def test_all_must_approve_start(self):
+        g = Game('da game')
+        g.add_player('alpha')
+        g.add_player('beta')
+        g.add_player('gaga')
+        self.assertFalse(g.start('alpha'))
+        self.assertFalse(g.start('beta'))
+        self.assertEquals({
+                'type': 'not_yet_started',
+                'players': {'alpha': {'started': True  },
+                            'beta':  {'started': True  },
+                            'gaga':  {'started': False }}},
+                          g.get_status())
+
+    def test_chat(self):
+        g = Game('social')
+        g.add_player('betty')
+        g.add_player('susie')
+        g.add_player('martha')
+        g.chat('rando', "what up gals")
+        g.chat('betty', "who's that dude?")
+        g.chat('martha', "no clue")
+        for name in ['betty', 'susie', 'martha']:
+            self.assertEquals({
+                    'type': 'message',
+                    'speaker':'rando',
+                    'message':"what up gals"},
+                          g.poll(name))
+            self.assertEquals({
+                    'type': 'message',
+                    'speaker':'betty',
+                    'message':"who's that dude?"},
+                          g.poll(name))
+            self.assertEquals({
+                    'type': 'message',
+                    'speaker':'martha',
+                    'message':"no clue"},
+                          g.poll(name))
+            self.assertIsNone(g.poll(name))
+
     def test_starts(self):
         g = Game('duo')
-        g.add_player('foo')
-        g.add_player('bar')
-        self.assertTrue(g.start())
+        g.add_player('george clinton')
+        g.add_player('elmo')
+
+        self.assertFalse(g.start('george clinton'))
+        self.assertTrue(g.start('elmo'))
+
+        george_msg = g.get_status('george clinton')
+        # self.assertIsNotNone(george_msg)
+        # self.assertIsNone(g.poll('george clinton'), msg="Should be no more messages")
+
+        elmo_msg = g.get_status('elmo')
+        # self.assertIsNotNone(elmo_msg)
+        # self.assertIsNone(g.poll('elmo'), msg="Should be no more messages")
+
+        self.assertEqual('george clinton', george_msg['you'])
+        self.assertEqual('elmo', elmo_msg['you'])
+
+        self.assertEqual(1, george_msg['round'])
+        self.assertEqual(1, elmo_msg['round'])
+
+        self.assertEqual(0, elmo_msg['pot'])
+        self.assertEqual(0, george_msg['pot'])
+
+        self.assertEqual(1, len(elmo_msg['artifacts']))
+        self.assertEqual(1, len(george_msg['artifacts']))
+
+        self.assertEqual(1, len(elmo_msg['table']))
+        self.assertEqual(1, len(george_msg['table']))
+
+        self.assertEqual({'george clinton': 'undecided', 'elmo': 'undecided'},
+                         elmo_msg['players'])
+        self.assertEqual({'george clinton': 'undecided', 'elmo': 'undecided'},
+                         george_msg['players'])
 
     def test_invalid_move(self):
         g = Game('duo')
         g.add_player('foo')
         g.add_player('bar')
-        g.start()
+        g.start('foo')
+        g.start('bar')
         self.assertFalse(g.submit('foo', 'blergh'))
 
     def test_valid_move(self):
         g = Game('duo')
         g.add_player('foo')
         g.add_player('bar')
-        g.start()
+        g.start('foo')
+        g.start('bar')
         self.assertTrue(g.submit('bar', 'lando'))
+
+    def test_partial_completion(self):
+        g = Game('duo')
+        g.add_player('socrates')
+        g.add_player('aristotle')
+        g.start('socrates')
+        g.start('aristotle')
+        g.submit('socrates', 'han')
+        status = g.get_status()
+        self.assertEquals(1, len(status.pop('table')))
+        self.assertEquals(1, len(status.pop('artifacts')))
+        self.assertIsNotNone(status.pop('pot'))
+        self.assertEquals({
+                'type'  : 'in_progress',
+                'round' : 1,
+                'players': {
+                    'aristotle': 'undecided',
+                    'socrates' : 'decided'
+                    },
+                'taken' : []
+                }, status)
+
+    def test_one_deal(self):
+        g = Game('duo')
+        g.add_player('socrates')
+        g.add_player('aristotle')
+        g.start('socrates')
+        g.start('aristotle')
+        g.submit('socrates', 'han')
+        g.submit('aristotle', 'lando')
+        status = g.get_status()
+
+        # TODO this test doesn't correctly reflect artifact issues.
+        self.assertEquals(3,
+                          len(status.pop('table')) +
+                          len(status.pop('taken')) +
+                          len(status.pop('artifacts')))
+        self.assertIsNotNone(status.pop('pot'))
+        self.assertEquals({
+                'type'  : 'in_progress',
+                'round' : 1,
+                'players': {
+                    'aristotle': 'lando',
+                    'socrates' : 'undecided'
+                    }
+                }, status)
+
+    def test_double_landos(self):
+        g = Game('duo')
+        g.add_player('socrates')
+        g.add_player('aristotle')
+        g.start('socrates')
+        g.start('aristotle')
+        g.submit('socrates', 'lando')
+        g.submit('aristotle', 'lando')
+
+        status = g.get_status()
+
+        self.assertEquals(1, len(status.pop('table')))
+        self.assertTrue(len(status.pop('artifacts')) > 0)
+        self.assertIsNotNone(status.pop('pot'))
+        self.assertEquals({
+                'type'  : 'in_progress',
+                'round' : 2,
+                'players': {
+                    'aristotle': 'undecided',
+                    'socrates' : 'undecided'
+                    },
+                'taken' : []
+                }, status)
+
+    def test_double_hans(self):
+        g = Game('duo')
+        g.add_player('socrates')
+        g.add_player('aristotle')
+        g.start('socrates')
+        g.start('aristotle')
+
+        while True:
+            g.submit('socrates', 'han')
+            g.submit('aristotle', 'han')
+            if g.get_status()['round'] is 2:
+                break
+
+        # in case of double-hans, neither player gets loot
+        self.assertEquals(0, g.get_status('socrates')['loot'])
+        self.assertEquals(0, g.get_status('aristotle')['loot'])
 
     # def test_simulation(self):
     #     players = [Player('plato'),

@@ -1,59 +1,78 @@
-import json
+# Message types
+NOT_YET_STARTED = 'not_yet_started'
+IN_PROGRESS = 'in_progress'
+FINISHED = 'finished'
+MESSAGE = 'message'
 
-class Status(object):
+def not_yet_started(players):
+    return { 'type': NOT_YET_STARTED,
+             'players': dict((p.name, {'started': p.started}) for p in players) }
+
+def in_progress(all_players, players_in_play,
+           deal, artifacts, table, taken, pot, round_num, you=None):
     """
-    A message with current game state, easily convertible to JSON.
+    Create a python object  with current game state, easily convertible to JSON.
+    Generate the game status object.  If there is no `you`, it will
+    not contain player-specific data.
     """
 
-    def __init__(self, you, all_players, players_in_play,
-                 deal, artifacts, table, pot, round_num):
-        """
-        Generate the game status object.  If there is no `you`, it will
-        not contain player-specific data.
-        """
-        decisions = {}
-        for player in all_players:
-            decisions[player.name] = 'camped'
+    decisions = {}
+    for player in all_players:
+        decisions[player.name] = 'lando'
 
-        if deal.is_over:
-            for lando in deal.landos:
-                decisions[lando.name] = 'lando'
-            for han in deal.hans:
-                decisions[han.name] = 'han solo'
-        else:
-            for player in players_in_play:
-                decisions[player.name] = 'undecided'
-            for player in deal.landos + deal.hans:
-                decisions[player.name] = 'decided'
+        # if deal.is_over():
+        #     for lando in deal.landos:
+        #         decisions[lando.name] = 'lando'
+        #     for han in deal.hans:
+        #         decisions[han.name] = 'han solo'
+        # else:
+        for player in players_in_play:
+            decisions[player.name] = 'undecided'
+        for player in deal.landos + deal.hans:
+            decisions[player.name] = 'decided'
 
-        self.obj = {
-            'decisions' : decisions,
-            'table': [card.name for card in table],
-            'pot': pot,
-            'round': round_num,
-            'artifacts': [artifact.name for artifact in artifacts]
-            }
+    obj = {
+        'type' : IN_PROGRESS,
+        'players' : decisions,
+        'table': [card.name for card in table],
+        'taken': [card.name for card in taken],
+        'pot': pot,
+        'round': round_num,
+        'artifacts': [artifact.name for artifact in artifacts]
+        }
 
-        if you:
-            self.obj.put('you', you.name)
-            self.obj.put('loot', you.loot)
+    if you:
+        obj['you'] = you.name
+        obj['loot'] = you.loot
 
-    def to_json(self):
-        return json.dumps(self.obj)
+    return obj
 
-
-class EndGame(object):
+def finished(players, round_num):
     """
     A message with endgame state, easily convertible to JSON.
     """
+    # scores = {}
+    # for player in players:
+    #     scores[player.name] = {
+    #         'loot' : player.loot,
+    #         'artifacts' : [artifact.name for artifact in player.artifacts]
+    #         }
+        #return { 'finished': { 'scores' : scores } }
 
-    def __init__(self, players):
-        self.obj = {}
-        for player in players:
-            self.obj[player.name] = {
-                'loot' : player.loot,
-                'artifacts' : [artifact.name for artifact in player.artifacts]
-                }
+    return {
+        'type': FINISHED,
+        'players': dict((p.name, {
+                    'loot' : p.loot,
+                    'artifacts' : [artifact.name for artifact in p.artifacts]
+                    }) for p in players)
+        }
 
-    def to_json(self):
-        return json.dumps(self.obj)
+def chat(speaker, message):
+    """
+    A chat message.
+    """
+    return {
+        'type': MESSAGE,
+        'speaker': speaker,
+        'message': message
+        }
