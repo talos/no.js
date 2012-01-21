@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 from game import Game
 
 class Database(object):
@@ -14,6 +12,6 @@ class Database(object):
         """
         game = self._games.get(game_name)
         if not game:
-            game = Game(game_name)
+            game = Game()
             self._games[game_name] = game
         return game

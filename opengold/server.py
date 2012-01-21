@@ -4,11 +4,8 @@ import uuid
 import json
 
 from brubeck.request_handling import Brubeck, WebMessageHandler
-from brubeck.auth import authenticated, UserHandlingMixin
 
 from db import Database
-
-SESSION = 'session'
 
 # support for longpolling
 try:
@@ -18,83 +15,86 @@ except:
     import eventlet
     coro_lib = eventlet
 
-def game_name(func):
+def game(func):
     """
-    This decorator converts a game_name in the first argument to a game.
+    This decorator converts a game_name in the first argument to a
+    game.  It also passes a player_name argument, which is None if the
+    user is not logged into that game.
     """
 
-    #def wrapped(self, game_name, *args):
-    def wrapped(self, **kwargs):
-        # game = self.db_conn.get_game(game_name)
-        # func(self, game, *args)
-        game = self.db_conn.get_game(kwargs['game_name'])
-        func(self, game, **kwargs)
+    def wrapped(self, *args, **kwargs):
+        game_name = kwargs['game_name']
+        game = self.db_conn.get_game(game_name)
+        player = self.get_cookie(game_name, None, self.application.cookie_secret)
+        return func(self, game, player, *args, **kwargs)
 
     return wrapped
 
 
-class UserMixin(UserHandlingMixin):
-    """
-    Use this mixin to leverage Brubeck's UserHandlingMixin.
-    """
+class StatusHandler(WebMessageHandler):
 
-    def get_current_user(self):
+    @game
+    def get(self, game, player, *args, **kwargs):
         """
-        Return the user name associated with the cookie, or None
-        if there is no cookie.
+        Get the status of a game.
         """
-        return self.get_cookie(SESSION, None, self.application.cookie_secret)
-
-
-class StatusHandler(WebMessageHandler, UserMixin):
-
-    @game_name
-    @authenticated
-    def get(self, game):
-        """
-        Get the status of a game, if it exists.
-        """
-        self.set_body(json.dumps(game.get_status(self.current_user))) # TODO: rendering!
+        status = json.dumps(game.get_status(player))
+        self.set_body(status) # TODO: rendering!
         return self.render()
 
 
-class StartHandler(WebMessageHandler, UserMixin):
+class StartHandler(WebMessageHandler):
 
-    @game_name
-    @authenticated
-    def post(self, game):
+    @game
+    def post(self, game, player, *args, **kwargs):
         """
         Vote to start a game.  All players that have joined must agree
         to do this.
         """
-        self.set_body(json.dumps(game.get_status(self.current_user))) # TODO: rendering!
+        if player:
+            game.start(player)  # perhaps suboptimal -- returns 200
+                                # whether the game started or not, but
+                                # we want to be able to confirm via
+                                # status that the user was even in a
+                                # position to vote on this.
+            self.set_status(200)
+        else:
+            self.set_status(400, status_msg="You are not in this game")
+
         return self.render()
 
 
-class ChatHandler(WebMessageHandler, UserMixin):
+class ChatHandler(WebMessageHandler):
 
-    @game_name
-    @authenticated
-    def post(self, game):
+    @game
+    def post(self, game, player, *args, **kwargs):
         """
         Message other players in the game.
         """
-        self.get_param('message')
-        self.set_body(json.dumps(game.get_status(self.current_user))) # TODO: rendering!
+        message = self.get_param('message')
+        if message and player:
+            game.chat(player, message)
+            self.set_status(200)
+        elif player is None:
+            self.set_status(400, status_msg="You are not in this game")
+        elif message is None:
+            self.set_status(400, status_msg="You did not specify a message body")
+        else:
+            self.set_status(400)
+
         return self.render()
 
 
-class PollHandler(WebMessageHandler, UserMixin):
+class PollHandler(WebMessageHandler):
 
-    @game_name
-    @authenticated
-    def post(self, game):
+    @game
+    def post(self, game, player, *args, **kwargs):
         """
         Poll for message to player.
         """
-        if(self.current_user):
+        if player:
             while(True):
-                msg = game.poll(self.current_user)
+                msg = game.poll(player)
                 if(msg):
                     break
                 else:
@@ -109,38 +109,42 @@ class PollHandler(WebMessageHandler, UserMixin):
 
 class JoinHandler(WebMessageHandler):
 
-    @game_name
-    def post(self, game, **kwargs):
+    @game
+    def post(self, game, player, *args, **kwargs):
         """
         Try to join the game with the specified user name.  If it
         succeeds, feed the user a cookie!
         """
-        player = kwargs['player']
-        if game.add_player(player):
-            # todo this will kill their involvement in other games.
-            self.set_cookie(SESSION, player, self.application.cookie_secret)
-            return self.render()
+        if player:  # they are already logged in
+            self.set_status(400, status_msg="You are already in this game as %s" % player)
+        elif 'player_name' in kwargs:
+            player_name = kwargs['player_name']
+            if game.add_player(player_name):
+                self.set_cookie(kwargs['game_name'], player_name, self.application.cookie_secret)
+                self.set_status(200)
+            else:
+                self.set_status(400, status_msg="Could not add %s to game" % player_name)
+        else:
+            self.set_status(400, status_msg="You must specify a name to join.")
 
-        self.set_status(400, status_msg="Could not join game.")
         return self.render()
 
 
-class MoveHandler(WebMessageHandler, UserMixin):
+class MoveHandler(WebMessageHandler):
 
-    @authenticated
-    @game_name
-    def post(self, game, **kwargs):
+    @game
+    def post(self, game, player, *args, **kwargs):
         """
         Looks like we got a Lando!!
         """
         move = kwargs['move']
-        if self.current_user:
-            if game.submit_move(self.current_user, move):
-                return self.render()
-
-        return self.render(status_code=400)
-
-        self.set_status(400, status_msg="Invalid move")
+        if player:
+            if game.submit(player, move):
+                self.set_status(200)
+            else:
+                self.set_status(400, status_msg="Could not submit move.")
+        else:
+            self.set_status(400, status_msg="You are not in this game.")
         return self.render()
 
 
@@ -149,9 +153,9 @@ config = {
     'handler_tuples': [(r'^/(?P<game_name>[^/]+)$', StatusHandler),
                        (r'^/(?P<game_name>[^/]+)/start$', StartHandler),
                        (r'^/(?P<game_name>[^/]+)/poll$', PollHandler),
-                       (r'^/(?P<game_name>[^/]+)/join/(?P<player>[^/]+)$', JoinHandler),
+                       (r'^/(?P<game_name>[^/]+)/join/(?P<player_name>[^/]+)$', JoinHandler),
                        (r'^/(?P<game_name>[^/]+)/move/(?P<move>lando|han)$', MoveHandler)],
-    'cookie_secret': str(uuid.uuid4()),
+    'cookie_secret': str(uuid.uuid4()),  # this will kill all sessions/games if the server crashes!
     'db_conn': Database()
 }
 

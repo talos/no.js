@@ -18,7 +18,7 @@ def in_progress(all_players, players_in_play,
 
     decisions = {}
     for player in all_players:
-        decisions[player.name] = 'lando'
+        decisions[player.name] = {'move': 'lando'}
 
         # if deal.is_over():
         #     for lando in deal.landos:
@@ -27,9 +27,9 @@ def in_progress(all_players, players_in_play,
         #         decisions[han.name] = 'han solo'
         # else:
         for player in players_in_play:
-            decisions[player.name] = 'undecided'
+            decisions[player.name] = {'move': 'undecided'}
         for player in deal.landos + deal.hans:
-            decisions[player.name] = 'decided'
+            decisions[player.name] = {'move': 'decided'}
 
     obj = {
         'type' : IN_PROGRESS,

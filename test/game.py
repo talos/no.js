@@ -15,18 +15,18 @@ class TestGame(unittest.TestCase):
         pass
 
     def test_needs_multiple_players(self):
-        g = Game('forest')
+        g = Game()
         g.add_player('hermit')
         self.assertFalse(g.start('hermit'))
 
     def test_move_before_start(self):
-        g = Game('duo')
+        g = Game()
         g.add_player('foo')
         g.add_player('bar')
         self.assertFalse(g.submit('foo', 'han'))
 
     def test_all_must_approve_start(self):
-        g = Game('da game')
+        g = Game()
         g.add_player('alpha')
         g.add_player('beta')
         g.add_player('gaga')
@@ -40,7 +40,7 @@ class TestGame(unittest.TestCase):
                           g.get_status())
 
     def test_chat(self):
-        g = Game('social')
+        g = Game()
         g.add_player('betty')
         g.add_player('susie')
         g.add_player('martha')
@@ -66,7 +66,7 @@ class TestGame(unittest.TestCase):
             self.assertIsNone(g.poll(name))
 
     def test_starts(self):
-        g = Game('duo')
+        g = Game()
         g.add_player('george clinton')
         g.add_player('elmo')
 
@@ -102,7 +102,7 @@ class TestGame(unittest.TestCase):
                          george_msg['players'])
 
     def test_invalid_move(self):
-        g = Game('duo')
+        g = Game()
         g.add_player('foo')
         g.add_player('bar')
         g.start('foo')
@@ -110,7 +110,7 @@ class TestGame(unittest.TestCase):
         self.assertFalse(g.submit('foo', 'blergh'))
 
     def test_valid_move(self):
-        g = Game('duo')
+        g = Game()
         g.add_player('foo')
         g.add_player('bar')
         g.start('foo')
@@ -118,7 +118,7 @@ class TestGame(unittest.TestCase):
         self.assertTrue(g.submit('bar', 'lando'))
 
     def test_partial_completion(self):
-        g = Game('duo')
+        g = Game()
         g.add_player('socrates')
         g.add_player('aristotle')
         g.start('socrates')
@@ -139,7 +139,7 @@ class TestGame(unittest.TestCase):
                 }, status)
 
     def test_one_deal(self):
-        g = Game('duo')
+        g = Game()
         g.add_player('socrates')
         g.add_player('aristotle')
         g.start('socrates')
@@ -164,7 +164,7 @@ class TestGame(unittest.TestCase):
                 }, status)
 
     def test_double_landos(self):
-        g = Game('duo')
+        g = Game()
         g.add_player('socrates')
         g.add_player('aristotle')
         g.start('socrates')
@@ -188,7 +188,7 @@ class TestGame(unittest.TestCase):
                 }, status)
 
     def test_double_hans(self):
-        g = Game('duo')
+        g = Game()
         g.add_player('socrates')
         g.add_player('aristotle')
         g.start('socrates')

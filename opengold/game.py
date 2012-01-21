@@ -7,14 +7,13 @@ MAX_ROUNDS = 5
 
 class Game(object):
 
-    def __init__(self, name):
+    def __init__(self):
         """
         Generate a new game with the specified name.
         """
         self._players = {}
         self._victors = []
         self._deck = Deck()
-        self._name = name
         self._round_num = 0
 
     def _next_round(self):
@@ -65,12 +64,12 @@ class Game(object):
         else:
             return False
 
-    def chat(self, speaker, content):
+    def chat(self, speaker, message):
         """
         Broadcast chat message to all players.
         """
         for player in self._players.values():
-            player.send(message.chat(speaker, content))
+            player.send(message.chat(speaker, message))
 
     def start(self, player_name):
         """
@@ -94,8 +93,9 @@ class Game(object):
 
     def poll(self, player_name):
         """
-        Poll messages for a player by name.  Returns none if there is no player
-        by that name, or no messages for that player.
+        Poll messages for a player by name.  Returns none if there is
+        no player by that name, or no messages for that player.  A
+        message is a python object from the message library.
         """
         player = self._players.get(player_name)
 
