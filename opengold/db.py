@@ -5,6 +5,12 @@ class Database(object):
     def __init__(self):
         self._games = {}
 
+    def get_all_names(self):
+        """
+        Retrieve a list of all game names.
+        """
+        return self._games.keys()
+
     def get_game(self, game_name):
         """
         Retrieve a game by name.  Creates a new game by that name

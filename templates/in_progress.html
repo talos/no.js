@@ -1,0 +1,33 @@
+{% extends "game.html" %}
+{% block title %}Open Gold "{{game_name}}": {{status.you}}{% endblock %}
+{% block game %}
+<div id="you">You: {{status.you}}</div>
+<div id="loot">Loot: {{status.loot}}</div>
+<div id="artifacts">Artifacts in deck:
+{% for artifact in status.artifacts %}
+<div>{{artifact}}</div>
+{% endfor %}
+</div>
+<div id="captured">Captured:
+{% for captured in status.captured %}
+<div>{{captured}}</div>
+{% endfor %}
+</div>
+<div id="table">On table:
+{% for card in status.table %}
+<div>{{card}}</div>
+{% endfor %}
+</div>
+<div id="pot">Loose gold: {{status.pot}}</div>
+<div id="players">Players
+{% for player in status.players %}
+<div>{{player.name}}: {{player.move}}</div>
+{% endfor %}
+</div>
+<form method="post" action="{{game_name}}/move">
+  <label for="move">Decide:</label>
+  <input type="radio" name="move" value="han" /> Han
+  <input type="radio" name="move" value="lando" /> Lando
+  <input type="submit" value="Venture" />
+</form>
+{% endblock %}

@@ -4,8 +4,10 @@ import uuid
 import json
 
 from brubeck.request_handling import Brubeck, WebMessageHandler
+from brubeck.templating import load_jinja2_env, Jinja2Rendering
 
 from db import Database
+from message import NOT_YET_STARTED, IN_PROGRESS
 
 # support for longpolling
 try:
@@ -29,6 +31,42 @@ def game(func):
         return func(self, game, player, *args, **kwargs)
 
     return wrapped
+
+
+class IndexHandler(Jinja2Rendering):
+
+    def get(self):
+        """
+        List all games currently available.
+        """
+        if self.get_argument('game'):
+            return self.redirect(self.get_argument('game'))
+        else:
+            context = {
+                'games': [{ 'name': name,
+                            'status': self.db_conn.get_game(name).get_status() }
+                          for name in self.db_conn.get_all_names()]
+                }
+            return self.render_template('index.html', **context)
+
+class GameHandler(Jinja2Rendering):
+
+    @game
+    def get(self, game, player, *args, **kwargs):
+        status = game.get_status(player)
+        context = {
+            'game_name': kwargs['game_name'],
+            'status' : status
+            }
+        s = status['type']
+        if s is NOT_YET_STARTED and player is None:
+            return self.render_template('join.html', **context)
+        elif s is NOT_YET_STARTED:
+            return self.render_template('start.html', **context)
+        elif s is IN_PROGRESS:
+            return self.render_template('in_progress.html', **context)
+        else:
+            return self.render_template('finished.html', **context)
 
 
 class StatusHandler(WebMessageHandler):
@@ -57,7 +95,7 @@ class StartHandler(WebMessageHandler):
                                 # we want to be able to confirm via
                                 # status that the user was even in a
                                 # position to vote on this.
-            self.set_status(200)
+            self.redirect('/%s' % kwargs['game_name'])
         else:
             self.set_status(400, status_msg="You are not in this game")
 
@@ -74,7 +112,7 @@ class ChatHandler(WebMessageHandler):
         message = self.get_param('message')
         if message and player:
             game.chat(player, message)
-            self.set_status(200)
+            self.redirect('/%s' % kwargs['game_name'])
         elif player is None:
             self.set_status(400, status_msg="You are not in this game")
         elif message is None:
@@ -112,16 +150,16 @@ class JoinHandler(WebMessageHandler):
     @game
     def post(self, game, player, *args, **kwargs):
         """
-        Try to join the game with the specified user name.  If it
-        succeeds, feed the user a cookie!
+        Try to join the game with the post-specified player name `player`.
+        If it succeeds, feed the user a cookie!
         """
         if player:  # they are already logged in
             self.set_status(400, status_msg="You are already in this game as %s" % player)
-        elif 'player_name' in kwargs:
-            player_name = kwargs['player_name']
+        elif self.get_argument('player'):
+            player_name = self.get_argument('player')
             if game.add_player(player_name):
                 self.set_cookie(kwargs['game_name'], player_name, self.application.cookie_secret)
-                self.set_status(200)
+                self.redirect('/%s' % kwargs['game_name'])
             else:
                 self.set_status(400, status_msg="Could not add %s to game" % player_name)
         else:
@@ -137,10 +175,9 @@ class MoveHandler(WebMessageHandler):
         """
         Looks like we got a Lando!!
         """
-        move = kwargs['move']
         if player:
-            if game.submit(player, move):
-                self.set_status(200)
+            if game.submit(player, self.get_argument('move')):
+                self.redirect('/%s' % kwargs['game_name'])
             else:
                 self.set_status(400, status_msg="Could not submit move.")
         else:
@@ -150,13 +187,16 @@ class MoveHandler(WebMessageHandler):
 
 config = {
     'mongrel2_pair': ('ipc://127.0.0.1:9999', 'ipc://127.0.0.1:9998'),
-    'handler_tuples': [(r'^/(?P<game_name>[^/]+)$', StatusHandler),
+    'handler_tuples': [(r'^/$', IndexHandler),
+                       (r'^/(?P<game_name>[^/]+)$', GameHandler),
+                       (r'^/(?P<game_name>[^/]+)/status$', StatusHandler),
                        (r'^/(?P<game_name>[^/]+)/start$', StartHandler),
                        (r'^/(?P<game_name>[^/]+)/poll$', PollHandler),
-                       (r'^/(?P<game_name>[^/]+)/join/(?P<player_name>[^/]+)$', JoinHandler),
-                       (r'^/(?P<game_name>[^/]+)/move/(?P<move>lando|han)$', MoveHandler)],
+                       (r'^/(?P<game_name>[^/]+)/join$', JoinHandler),
+                       (r'^/(?P<game_name>[^/]+)/move$', MoveHandler)],
     'cookie_secret': str(uuid.uuid4()),  # this will kill all sessions/games if the server crashes!
-    'db_conn': Database()
+    'db_conn': Database(),
+    'template_loader': load_jinja2_env('templates')
 }
 
 

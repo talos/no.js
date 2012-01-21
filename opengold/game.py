@@ -64,12 +64,12 @@ class Game(object):
         else:
             return False
 
-    def chat(self, speaker, message):
+    def chat(self, speaker, content):
         """
         Broadcast chat message to all players.
         """
         for player in self._players.values():
-            player.send(message.chat(speaker, message))
+            player.send(message.chat(speaker, content))
 
     def start(self, player_name):
         """

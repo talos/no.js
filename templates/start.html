@@ -1,0 +1,10 @@
+{% extends "game.html" %}
+{% block title %}Start Open Gold "{{game_name}}"?{% endblock %}
+{% block game %}
+{% for player in status.players %}
+<div>{{player.name}}: {{player.started}}</div>
+{% endfor %}
+<form method="post" action="{{game_name}}/start">
+  <input type="submit" value="Start game" />
+</form>
+{% endblock %}

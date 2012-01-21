@@ -1,0 +1,12 @@
+{% extends "game.html" %}
+{% block title %}Join Open Gold "{{game_name}}"?{% endblock %}
+{% block game %}
+{% for player in status.players %}
+<div>{{player.name}}: {{player.started}}</div>
+{% endfor %}
+<form method="post" action="{{game_name}}/join">
+  <label for="name">Player name:</label>
+  <input type="text" id="player" name="player" />
+  <input type="submit" value="Join" />
+</form>
+{% endblock %}

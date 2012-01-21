@@ -39,28 +39,28 @@ class TestServer(unittest.TestCase):
         jack = requests.session()
         jill = requests.session()
 
-        self.assertEquals(200, jack.post(HOST + '/hill/join/jack').status_code)
-        self.assertEquals(200, jill.post(HOST + '/hill/join/jill').status_code)
+        self.assertEquals(200, jack.post(HOST + '/hill/join',
+                                         data={'player':'jack'}).status_code)
+        self.assertEquals(200, jill.post(HOST + '/hill/join',
+                                         data={'player':'jill'}).status_code)
 
         self.assertEquals({
                 'type': 'not_yet_started',
-                'players': {
-                    'jack': { 'started': False },
-                    'jill': { 'started': False }
-                    }}, json.loads(jack.get(HOST + '/hill').content))
+                'players': [{'name': 'jill', 'started': False },
+                            {'name': 'jack', 'started': False }]},
+                          json.loads(jack.get(HOST + '/hill/status').content))
 
         self.assertEquals(200, jack.post(HOST + '/hill/start').status_code)
 
         self.assertEquals({
                 'type': 'not_yet_started',
-                'players': {
-                    'jack': { 'started': True },
-                    'jill': { 'started': False }
-                    }}, json.loads(jack.get(HOST + '/hill').content))
+                'players': [{'name': 'jill', 'started': False },
+                            {'name': 'jack', 'started': True }]},
+                          json.loads(jack.get(HOST + '/hill/status').content))
 
         self.assertEquals(200, jill.post(HOST + '/hill/start').status_code)
 
-        status = json.loads(jack.get(HOST + '/hill').content)
+        status = json.loads(jack.get(HOST + '/hill/status').content)
         artifacts = status.pop('artifacts')
         self.assertTrue(len(artifacts) is 0 or len(artifacts) is 1)
         self.assertEquals(1, len(status.pop('table')))
@@ -68,16 +68,16 @@ class TestServer(unittest.TestCase):
                 'type': 'in_progress',
                 'round' : 1,
                 'pot': 0,
-                'taken' : [],
+                'captured' : [],
                 'you' : 'jack',
                 'loot' : 0,
-                'players': {
-                    'jack': { 'move': 'undecided' },
-                    'jill': { 'move': 'undecided' }
-                    }}, status)
+                'players': [{'name': 'jill', 'move': 'undecided' },
+                            {'name': 'jack', 'move': 'undecided'}]}, status)
 
-        self.assertEquals(200, jack.post(HOST + '/hill/move/lando').status_code)
-        self.assertEquals(200, jill.post(HOST + '/hill/move/lando').status_code)
+        self.assertEquals(200, jack.post(HOST + '/hill/move',
+                                         data={'move':'lando'}).status_code)
+        self.assertEquals(200, jill.post(HOST + '/hill/move',
+                                         data={'move':'lando'}).status_code)
 
         # At this point, the game should have advanced to the next round.
 

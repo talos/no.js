@@ -34,9 +34,9 @@ class TestGame(unittest.TestCase):
         self.assertFalse(g.start('beta'))
         self.assertEquals({
                 'type': 'not_yet_started',
-                'players': {'alpha': {'started': True  },
-                            'beta':  {'started': True  },
-                            'gaga':  {'started': False }}},
+                'players': [{'name':'alpha', 'started': True  },
+                            {'name': 'beta', 'started': True  },
+                            {'name': 'gaga', 'started': False }]},
                           g.get_status())
 
     def test_chat(self):
@@ -96,9 +96,11 @@ class TestGame(unittest.TestCase):
         self.assertEqual(1, len(elmo_msg['table']))
         self.assertEqual(1, len(george_msg['table']))
 
-        self.assertEqual({'george clinton': 'undecided', 'elmo': 'undecided'},
+        self.assertEqual([{'name': 'george clinton', 'move': 'undecided'},
+                          {'name': 'elmo', 'move': 'undecided'}],
                          elmo_msg['players'])
-        self.assertEqual({'george clinton': 'undecided', 'elmo': 'undecided'},
+        self.assertEqual([{'name': 'george clinton', 'move': 'undecided'},
+                          {'name': 'elmo', 'move': 'undecided'}],
                          george_msg['players'])
 
     def test_invalid_move(self):
@@ -128,14 +130,14 @@ class TestGame(unittest.TestCase):
         self.assertEquals(1, len(status.pop('table')))
         self.assertEquals(1, len(status.pop('artifacts')))
         self.assertIsNotNone(status.pop('pot'))
+
         self.assertEquals({
                 'type'  : 'in_progress',
                 'round' : 1,
-                'players': {
-                    'aristotle': 'undecided',
-                    'socrates' : 'decided'
-                    },
-                'taken' : []
+                'players': [
+                    {'name': 'socrates', 'move': 'decided'},
+                    {'name': 'aristotle', 'move': 'undecided'}],
+                'captured' : []
                 }, status)
 
     def test_one_deal(self):
@@ -151,16 +153,15 @@ class TestGame(unittest.TestCase):
         # TODO this test doesn't correctly reflect artifact issues.
         self.assertEquals(3,
                           len(status.pop('table')) +
-                          len(status.pop('taken')) +
+                          len(status.pop('captured')) +
                           len(status.pop('artifacts')))
         self.assertIsNotNone(status.pop('pot'))
         self.assertEquals({
                 'type'  : 'in_progress',
                 'round' : 1,
-                'players': {
-                    'aristotle': 'lando',
-                    'socrates' : 'undecided'
-                    }
+                'players': [
+                    {'name': 'socrates', 'move': 'undecided'},
+                    {'name': 'aristotle', 'move': 'lando'}]
                 }, status)
 
     def test_double_landos(self):
@@ -177,14 +178,14 @@ class TestGame(unittest.TestCase):
         self.assertEquals(1, len(status.pop('table')))
         self.assertTrue(len(status.pop('artifacts')) > 0)
         self.assertIsNotNone(status.pop('pot'))
+
         self.assertEquals({
                 'type'  : 'in_progress',
                 'round' : 2,
-                'players': {
-                    'aristotle': 'undecided',
-                    'socrates' : 'undecided'
-                    },
-                'taken' : []
+                'players': [
+                    {'name': 'socrates', 'move': 'undecided'},
+                    {'name': 'aristotle', 'move': 'undecided'}],
+                'captured' : []
                 }, status)
 
     def test_double_hans(self):
