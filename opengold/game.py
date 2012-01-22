@@ -141,7 +141,7 @@ class Game(object):
                 self._broadcast_status()
 
                 if self._round.is_over():
-                    if(self._round_num < MAX_ROUNDS):
+                    if(self._round_num <= MAX_ROUNDS):
                         self._next_round()
                     else:
                         #self._victors = self._determine_victors()

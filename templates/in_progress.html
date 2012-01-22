@@ -25,9 +25,11 @@
 {% endfor %}
 </div>
 <form method="post" action="{{game_name}}/move">
-  <label for="move">Decide:</label>
-  <input type="radio" name="move" value="han" /> Han
-  <input type="radio" name="move" value="lando" /> Lando
-  <input type="submit" value="Venture" />
+  <input type="hidden" name="move" value="han" />
+  <input type="submit" value="Han" />
+</form>
+<form method="post" action="{{game_name}}/move">
+  <input type="hidden" name="move" value="lando" />
+  <input type="submit" value="Lando" />
 </form>
 {% endblock %}
