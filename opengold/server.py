@@ -7,7 +7,6 @@ from brubeck.request_handling import Brubeck, WebMessageHandler
 from brubeck.templating import load_jinja2_env, Jinja2Rendering
 
 from db import Database
-from message import NOT_YET_STARTED, IN_PROGRESS
 
 # support for longpolling
 try:
@@ -53,20 +52,7 @@ class GameHandler(Jinja2Rendering):
 
     @game
     def get(self, game, player, *args, **kwargs):
-        status = game.get_status(player)
-        context = {
-            'game_name': kwargs['game_name'],
-            'status' : status
-            }
-        s = status['type']
-        if s is NOT_YET_STARTED and player is None:
-            return self.render_template('join.html', **context)
-        elif s is NOT_YET_STARTED:
-            return self.render_template('start.html', **context)
-        elif s is IN_PROGRESS:
-            return self.render_template('in_progress.html', **context)
-        else:
-            return self.render_template('finished.html', **context)
+        return self.render_template('app.html')
 
 
 class StatusHandler(WebMessageHandler):
@@ -95,7 +81,8 @@ class StartHandler(WebMessageHandler):
                                 # we want to be able to confirm via
                                 # status that the user was even in a
                                 # position to vote on this.
-            self.redirect('/%s' % kwargs['game_name'])
+            self.set_status(200)
+            #self.redirect('/%s' % kwargs['game_name'])
         else:
             self.set_status(400, status_msg="You are not in this game")
 
@@ -112,7 +99,8 @@ class ChatHandler(WebMessageHandler):
         message = self.get_param('message')
         if message and player:
             game.chat(player, message)
-            self.redirect('/%s' % kwargs['game_name'])
+            self.set_status(200)
+            #self.redirect('/%s' % kwargs['game_name'])
         elif player is None:
             self.set_status(400, status_msg="You are not in this game")
         elif message is None:
@@ -159,7 +147,8 @@ class JoinHandler(WebMessageHandler):
             player_name = self.get_argument('player')
             if game.add_player(player_name):
                 self.set_cookie(kwargs['game_name'], player_name, self.application.cookie_secret)
-                self.redirect('/%s' % kwargs['game_name'])
+                self.set_status(200)
+                #self.redirect('/%s' % kwargs['game_name'])
             else:
                 self.set_status(400, status_msg="Could not add %s to game" % player_name)
         else:
@@ -177,7 +166,8 @@ class MoveHandler(WebMessageHandler):
         """
         if player:
             if game.submit(player, self.get_argument('move')):
-                self.redirect('/%s' % kwargs['game_name'])
+                self.set_status(200)
+                #self.redirect('/%s' % kwargs['game_name'])
             else:
                 self.set_status(400, status_msg="Could not submit move.")
         else:

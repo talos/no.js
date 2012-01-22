@@ -3,6 +3,7 @@
 {% block game %}
 <div id="you">You: {{status.you}}</div>
 <div id="loot">Loot: {{status.loot}}</div>
+<div id="artifacts">Your artifacts: {{status.loot}}</div>
 <div id="artifacts">Artifacts in deck:
 {% for artifact in status.artifacts %}
 <div>{{artifact}}</div>

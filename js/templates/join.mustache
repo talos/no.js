@@ -1,0 +1,8 @@
+{{#players}}
+  <div>{{name}}: {{started}}</div>
+{{/players}}
+<form method="post" action="{{game_name}}/join">
+  <label for="name">Player name:</label>
+  <input type="text" id="player" name="player" />
+  <input type="submit" value="Join" />
+</form>

@@ -41,6 +41,7 @@ def in_progress(all_players, players_in_play,
     if you:
         obj['you'] = you.name
         obj['loot'] = you.loot
+        obj['artifacts'] = [artifact.name for artifact in you.artifacts]
 
     return obj
 
