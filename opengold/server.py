@@ -1,35 +1,26 @@
 #!/usr/bin/env python
 
 import uuid
+import redis
 import json
+
+import game
 
 from brubeck.request_handling import Brubeck, WebMessageHandler
 from brubeck.templating import load_jinja2_env, Jinja2Rendering
 
-from db import Database
 
-# support for longpolling
-try:
-    import gevent
-    coro_lib = gevent
-except:
-    import eventlet
-    coro_lib = eventlet
-
-def game(func):
+class PlayerMixin():
     """
-    This decorator converts a game_name in the first argument to a
-    game.  It also passes a player_name argument, which is None if the
-    user is not logged into that game.
+    This mixin provides a player method.
     """
 
-    def wrapped(self, *args, **kwargs):
-        game_name = kwargs['game_name']
-        game = self.db_conn.get_game(game_name)
-        player = self.get_cookie(game_name, None, self.application.cookie_secret)
-        return func(self, game, player, *args, **kwargs)
-
-    return wrapped
+    def get_player(self, game_name):
+        """
+        Get the player for the specified game_name, or None if the
+        user is not taking part.
+        """
+        return self.get_cookie(game_name, None, self.application.cookie_secret)
 
 
 class IndexHandler(Jinja2Rendering):
@@ -50,55 +41,42 @@ class IndexHandler(Jinja2Rendering):
 
 class GameHandler(Jinja2Rendering):
 
-    @game
-    def get(self, game, player, *args, **kwargs):
+    def get(self):
         return self.render_template('app.html')
 
 
-class StatusHandler(WebMessageHandler):
+class StatusHandler(WebMessageHandler, PlayerMixin):
 
-    @game
-    def get(self, game, player, *args, **kwargs):
+    def get(self, game_name):
         """
         Get the status of a game.
         """
-        status = json.dumps(game.get_status(player))
+        status = game.get_status(self.db_conn, game_name, self.get_player(game_name))
         self.set_body(status) # TODO: rendering!
         return self.render()
 
 
-class StartHandler(WebMessageHandler):
+class PollHandler(WebMessageHandler):
 
-    @game
-    def post(self, game, player, *args, **kwargs):
+    def post(self, game_name):
         """
-        Vote to start a game.  All players that have joined must agree
-        to do this.
+        Poll for updates to game.  Returns chats and statuses.
         """
-        if player:
-            game.start(player)  # perhaps suboptimal -- returns 200
-                                # whether the game started or not, but
-                                # we want to be able to confirm via
-                                # status that the user was even in a
-                                # position to vote on this.
-            self.set_status(200)
-            #self.redirect('/%s' % kwargs['game_name'])
-        else:
-            self.set_status(400, status_msg="You are not in this game")
-
-        return self.render()
+        for message in game.subscribe(self.db_conn, game_name, self.get_player(game_name)):
+            self.set_body(json.dumps(message))
+            return self.render()
 
 
 class ChatHandler(WebMessageHandler):
 
-    @game
-    def post(self, game, player, *args, **kwargs):
+    def post(self, game_name):
         """
         Message other players in the game.
         """
         message = self.get_param('message')
+        player = self.get_player(game_name)
         if message and player:
-            game.chat(player, message)
+            game.chat(self.db_conn, game_name, player, message)
             self.set_status(200)
             #self.redirect('/%s' % kwargs['game_name'])
         elif player is None:
@@ -111,42 +89,35 @@ class ChatHandler(WebMessageHandler):
         return self.render()
 
 
-class PollHandler(WebMessageHandler):
+class ConfirmHandler(WebMessageHandler, PlayerMixin):
 
-    @game
-    def post(self, game, player, *args, **kwargs):
+    def post(self, game_name):
         """
-        Poll for message to player.
+        Vote to advance to the next round.
         """
+        player = self.get_player(game_name)
         if player:
-            while(True):
-                msg = game.poll(player)
-                if(msg):
-                    break
-                else:
-                    coro_lib.sleep(0)
-
-            self.set_body(json.dumps(msg))
+            game.confirm(self.db_conn, game_name, player)
+            self.set_status(200)
+            #self.redirect('/%s' % kwargs['game_name'])
         else:
-            self.set_status(400, status_msg="You are not in this game.")
+            self.set_status(400, status_msg="You are not in this game")
 
         return self.render()
 
+class JoinHandler(WebMessageHandler, PlayerMixin):
 
-class JoinHandler(WebMessageHandler):
-
-    @game
-    def post(self, game, player, *args, **kwargs):
+    def post(self, game_name):
         """
         Try to join the game with the post-specified player name `player`.
         If it succeeds, feed the user a cookie!
         """
-        if player:  # they are already logged in
-            self.set_status(400, status_msg="You are already in this game as %s" % player)
+        if self.get_player(game_name):  # they are already logged in
+            self.set_status(400, status_msg="You are already in this game")
         elif self.get_argument('player'):
             player_name = self.get_argument('player')
-            if game.add_player(player_name):
-                self.set_cookie(kwargs['game_name'], player_name, self.application.cookie_secret)
+            if game.join(self.db_conn, game_name, player_name):
+                self.set_cookie(game_name, player_name, self.application.cookie_secret)
                 self.set_status(200)
                 #self.redirect('/%s' % kwargs['game_name'])
             else:
@@ -157,15 +128,15 @@ class JoinHandler(WebMessageHandler):
         return self.render()
 
 
-class MoveHandler(WebMessageHandler):
+class MoveHandler(WebMessageHandler, PlayerMixin):
 
-    @game
-    def post(self, game, player, *args, **kwargs):
+    def post(self, game_name):
         """
         Looks like we got a Lando!!
         """
+        player = self.get_player(game_name)
         if player:
-            if game.submit(player, self.get_argument('move')):
+            if game.move(self.db_conn, game_name, player, self.get_argument('move')):
                 self.set_status(200)
                 #self.redirect('/%s' % kwargs['game_name'])
             else:
@@ -180,12 +151,12 @@ config = {
     'handler_tuples': [(r'^/$', IndexHandler),
                        (r'^/(?P<game_name>[^/]+)$', GameHandler),
                        (r'^/(?P<game_name>[^/]+)/status$', StatusHandler),
-                       (r'^/(?P<game_name>[^/]+)/start$', StartHandler),
-                       (r'^/(?P<game_name>[^/]+)/poll$', PollHandler),
                        (r'^/(?P<game_name>[^/]+)/join$', JoinHandler),
-                       (r'^/(?P<game_name>[^/]+)/move$', MoveHandler)],
+                       (r'^/(?P<game_name>[^/]+)/confirm$', ConfirmHandler),
+                       (r'^/(?P<game_name>[^/]+)/move$', MoveHandler),
+                       (r'^/(?P<game_name>[^/]+)/poll$', PollHandler)],
     'cookie_secret': str(uuid.uuid4()),  # this will kill all sessions/games if the server crashes!
-    'db_conn': Database(),
+    'db_conn': redis.StrictRedis(),
     'template_loader': load_jinja2_env('templates')
 }
 
