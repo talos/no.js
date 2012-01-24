@@ -12,27 +12,34 @@ class TestGame(unittest.TestCase):
 
     def setUp(self):
         self.r = redis.StrictRedis(db='TestGame')
-
-    def tearDown(self):
         self.r.flushdb()
 
+    def tearDown(self):
+        #self.r.flushdb()
+        pass
+
     def test_needs_multiple_players(self):
-        game.join(self.r, 'game', 'hermit')
+        self.assertTrue(game.join(self.r, 'game', 'hermit'))
         self.assertFalse(game.confirm(self.r, 'game', 'hermit'))
 
     def test_move_before_start(self):
-        game.join(self.r, 'game', 'foo')
-        game.join(self.r, 'game', 'bar')
+        self.assertTrue(game.join(self.r, 'game', 'foo'))
+        self.assertTrue(game.join(self.r, 'game', 'bar'))
         self.assertFalse(game.move(self.r, 'game', 'foo', 'han'))
 
+    def test_cannot_join_twice(self):
+        self.assertTrue(game.join(self.r, 'game', 'dave'))
+        self.assertTrue(game.join(self.r, 'game', 'john'))
+        self.assertFalse(game.join(self.r, 'game', 'dave'))
+
     def test_all_must_approve_start(self):
-        game.join(self.r, 'game', 'alpha')
-        game.join(self.r, 'game', 'beta')
-        game.join(self.r, 'game', 'gaga')
+        self.assertTrue(game.join(self.r, 'game', 'alpha'))
+        self.assertTrue(game.join(self.r, 'game', 'beta'))
+        self.assertTrue(game.join(self.r, 'game', 'gaga'))
         self.assertFalse(game.confirm(self.r, 'game', 'alpha'))
         self.assertFalse(game.confirm(self.r, 'game', 'beta'))
 
-        info = game.get_info(self.r, game)
+        info = game.get_info(self.r, 'game')
         self.assertFalse('chat' in info)
         self.assertFalse('you' in info)
         self.assertTrue('status' in info)
@@ -41,8 +48,8 @@ class TestGame(unittest.TestCase):
         self.assertEquals(5, len(info['update']))
 
         self.assertEquals({'waiting': ['gaga'],
-                           'undecided': ['alpha', 'beta'],
-                           'decided': [],
+                           'confirmed': ['alpha', 'beta'],
+                           'moved': [],
                            'table': [],
                            'captured': [],
                            'pot': None,
@@ -68,8 +75,9 @@ class TestGame(unittest.TestCase):
         self.assertTrue('chat' in info)
         self.assertTrue('status' in info)
         self.assertTrue('update' in info)
-        self.assertTrue('status' in info)
         self.assertTrue('timestamp' in info)
+
+        chats = info['chat']
         self.assertEquals(3, len(chats))
         self.assertEquals('rando', chats[0]['speaker'])
         self.assertEquals('what up gals', chats[0]['message'])
