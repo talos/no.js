@@ -36,6 +36,7 @@ CHAT = 'chat' # sorted set
 UPDATE = 'update' # sorted set
 ROUND = 'round' # integer
 
+ALL_PLAYERS = 'players' #set
 WAITING = 'waiting' #set
 CAMP = 'camp' # set
 LANDO = 'lando' # set
@@ -87,25 +88,45 @@ def synchronized(func):
 
     return wrapped
 
-def chat(r, k, speaker, message):
+def chat(r, k, speaker, message, superuser=False):
     """
-    Broadcast chat message to all players.
-    """
-    timestamp = time.time()
+    Broadcast chat message to all players.  Garbage in, garbage out --
+    make sure to protect against XSS outside of this.  By default,
+    only players in the game are allowed to speak.  Pass True to
+    superuser to override this.
 
-    r.zadd(path(k, CHAT), timestamp, {SPEAKER: speaker, MESSAGE: message})
-    r.publish(k, CHAT)
-
-def update(r, k, update):
+    Returns True if the message was submitted, False otherwise.
     """
-    Broadcast an update.
+    if r.sismember(path(k, ALL_PLAYERS), speaker) or superuser:
+        timestamp = time.time()
+
+        r.zadd(path(k, CHAT), timestamp, {SPEAKER: speaker, MESSAGE: message})
+        r.publish(k, CHAT)
+        return True
+    else:
+        return False
+
+def _update(r, k, update):
+    """
+    Broadcast an update.  This should not be called externally.
     """
     timestamp = time.time()
     r.zadd(path(k, UPDATE), timestamp, update)
     r.publish(k, UPDATE)
 
+def _deal_card(r, k):
+    """
+    Deal a single card.  This should not be called externally.
+    """
+    card = r.lindex(path(k, DECK), random.randint(0, r.llen(path(k, DECK))))
+    _update(r, k, { CARD : card })
+
+    if card_type(card) == 'artifact':
+        artifacts_seen_count = r.incr(path(r, ARTIFACTS_SEEN_COUNT))
+        _update(r, k, { ARTIFACTS_SEEN_COUNT: artifacts_seen_count })
+
 @synchronized
-def get_info(r, k, start_time=0, player=None):
+def get_info(r, k, player=None, start_time=0 ):
     """
     Check for status updates and chats since the specified start_time.
     If there were any status updates since the timestamp, the current
@@ -155,6 +176,7 @@ def get_info(r, k, start_time=0, player=None):
         info[STATUS] = {
             WAITING: list(r.smembers(path(k, WAITING))),
             CONFIRMED: list(r.smembers(path(k, CONFIRMED))),
+            CAMP: list(r.smembers(path(k, CAMP))),
             MOVED: list(r.sunion(path(k, LANDO), path(k, HAN))),
             TABLE: r.lrange(path(k, TABLE), 0, -1),
             CAPTURED: r.lrange(path(k, CAPTURED), 0, -1),
@@ -167,6 +189,8 @@ def get_info(r, k, start_time=0, player=None):
         if player:
             if r.sismember(path(k, WAITING), player):
                 decision = WAITING
+            if r.sismember(path(k, CAMP), player):
+                decision = CAMP
             elif r.sismember(path(k, CONFIRMED), player):
                 decision = CONFIRMED
             elif r.sismember(path(k, LANDO), player):
@@ -174,10 +198,10 @@ def get_info(r, k, start_time=0, player=None):
             elif r.sismember(path(k, HAN), player):
                 decision = HAN
             info['you'] = {
-                'name' : player,
-                'decision' : decision,
-                'loot' : r.hget(path(k, LOOT), player),
-                'artifacts': r.lrange(path(k, ARTIFACTS_CAPTURED_PREFIX, player), 0, -1) }
+                PLAYER : player,
+                MOVED : decision,
+                LOOT : r.hget(path(k, LOOT), player) or 0,
+                ARTIFACTS_CAPTURED_PREFIX: r.lrange(path(k, ARTIFACTS_CAPTURED_PREFIX, player), 0, -1) }
 
     return info
 
@@ -187,25 +211,30 @@ def join(r, k, player):
     Add a player to the waiting room.  Returns True if they have
     been added, or False otherwise.  Can only join this room if
     the game is not yet started.
+
+    Garbage in, garbage out -- make sure to protect against XSS
+    (player name) outside of this.
     """
     if(r.exists(path(k, ROUND)) is False):
         if r.sadd(path(k, WAITING), player) == 1:
-            update(r, k, {JOINED: player})
+            r.sadd(path(k, ALL_PLAYERS), player)
+            _update(r, k, {JOINED: player})
             return True
     return False
 
 @synchronized
 def confirm(r, k, player):
     """
-    Player wants to start the next round.  If all players
-    have done this, then the game advance to the round.  Returns
-    True if the round has advanced, False otherwise.
+    Player wants to start the next round.  If all players have done
+    this, then the game advance to the round.  Returns True if the
+    individual player has confirmed (and wasn't before), False
+    otherwise.
 
     A single player cannot move the game from round 0 to round 1.
     """
     confirmed = r.smove(path(k, WAITING), path(k, CONFIRMED), player)
     if confirmed:
-        update(r, k, { CONFIRMED: player })
+        _update(r, k, { CONFIRMED: player })
     else:
         return False
 
@@ -213,17 +242,18 @@ def confirm(r, k, player):
         if not r.exists(path(k, ROUND)):  # game hasn't started yet
             r.rpush(path(k, DECK), *generate_deck())
             r.rpush(path(k, ARTIFACTS_UNSEEN), *generate_artifacts())
-            #update(r, k, { CONFIRMED: list(r.smembers(r, k, CONFIRMED)) } )
+            _update(r, k, { CONFIRMED: list(r.smembers(path(k, CONFIRMED))) } )
 
         _round = r.incr(path(k, ROUND))
         new_artifact = r.rpop(path(k, ARTIFACTS_UNSEEN))
-        update(r, k, { ROUND: _round } )
-        update(r, k, { ARTIFACTS_IN_PLAY: new_artifact } )
+        _update(r, k, { ROUND: _round } )
+        _update(r, k, { ARTIFACTS_IN_PLAY: new_artifact } )
         r.lpush(path(k, DECK), new_artifact)
         r.lpush(path(k, ARTIFACTS_IN_PLAY), new_artifact)
-        return True
 
-    return False
+        _deal_card(r, k)
+
+    return True
 
 @synchronized
 def move(r, k, player, move):
@@ -235,7 +265,7 @@ def move(r, k, player, move):
         return False
 
     if r.smove(path(k, CONFIRMED), path(k, move), player):
-        update(r, k, { MOVED: player } )
+        _update(r, k, { MOVED: player } )
     else:
         return False
 
@@ -258,7 +288,7 @@ def move(r, k, player, move):
                     r.lrem(path(k, TABLE), 1, card)
                     if len(landos) == 1: #  lucky lando
                         artifact_value = ARTIFACT_VALUES[r.get(path(k, ARTIFACTS_SEEN_COUNT)) or 0]
-                        update(r, k,
+                        _update(r, k,
                                { ARTIFACTS_CAPTURED_PREFIX :
                                      { PLAYER : landos[0],
                                        CARD: card,
@@ -266,7 +296,7 @@ def move(r, k, player, move):
                         loot += artifact_value
                         r.rpush(path(k, ARTIFACTS_CAPTURED_PREFIX) + landos[0], card)
                     else:
-                        update(r, k,
+                        _update(r, k,
                                { ARTIFACTS_DESTROYED :
                                      { PLAYERS : landos,
                                        CARD: card,
@@ -278,7 +308,7 @@ def move(r, k, player, move):
             r.set(path(k, POT), remainder)
             r.sunionstore(path(k, CAMP), path(k, CAMP), path(k, LANDO))
             r.delete(path(k, LANDO))
-            update(r, k, { CAPTURED : { PLAYERS : landos,
+            _update(r, k, { CAPTURED : { PLAYERS : landos,
                                         VALUE : payout,
                                         POT: remainder }})
             for lando in landos:
@@ -292,17 +322,17 @@ def move(r, k, player, move):
         ####
         if r.scard(path(k, HAN)) > 0:
             hans = list(r.smembers(path(k, HAN)))
-            card = r.lindex(path(k, DECK), random.randint(0, r.llen(path(k, DECK))))
-            update(r, k, { CARD : card })
+
+            _deal_card(r, k)
 
             # DEATH
             if card_type(card) == 'hazard' and card in r.lrange(path(k, TABLE), 0, -1):
-                update(r, k, { DEATH : { PLAYERS: hans,
+                _update(r, k, { DEATH : { PLAYERS: hans,
                                          CARD: card } })
                 r.sunionstore(path(k, WAITING), path(k, HAN), path(k, CAMP))
                 r.delete(path(k, CAMP))
             else:
-                update(r, k, { VENTURING : hans } )
+                _update(r, k, { VENTURING : hans } )
                 r.sunionstore(path(k, CONFIRMED), path(k, HAN))
             r.delete(path(k, HAN))
             r.rpush(path(k, TABLE), r.lrem(path(k, DECK), 1, card))
@@ -311,7 +341,7 @@ def move(r, k, player, move):
         ####
 
         if r.scard(path(k, CONFIRMED)) == 0:
-            update(r, k, { WAITING: list(r.smembers(path(k, CAMP))) } )
+            _update(r, k, { WAITING: list(r.smembers(path(k, CAMP))) } )
             r.sunionstore(path(k, WAITING), path(k, CAMP))
             r.delete(path(k, CAMP))
 

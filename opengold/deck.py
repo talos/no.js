@@ -1,7 +1,7 @@
 from itertools import product
 from random import shuffle
 
-TREASURES = [1,2,3,4,5,5,7,7,9,11,11,13,14,15,17]
+TREASURES = [str(i) for i in [1,2,3,4,5,5,7,7,9,11,11,13,14,15,17]]
 HAZARDS = ['bitches', 'spiders', 'snakes', 'fire', 'bricks']
 ARTIFACTS = ['zefrim cockring', 'shrek', 'tube', 'nazi', 'gingerbread man']
 

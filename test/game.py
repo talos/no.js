@@ -20,7 +20,10 @@ class TestGame(unittest.TestCase):
 
     def test_needs_multiple_players(self):
         self.assertTrue(game.join(self.r, 'game', 'hermit'))
-        self.assertFalse(game.confirm(self.r, 'game', 'hermit'))
+        self.assertTrue(game.confirm(self.r, 'game', 'hermit'))
+        info = game.get_info(self.r, 'game')
+        self.assertTrue('status' in info)
+        self.assertIsNone(game.get_info(self.r, 'game')['status']['round'])
 
     def test_move_before_start(self):
         self.assertTrue(game.join(self.r, 'game', 'foo'))
@@ -36,8 +39,8 @@ class TestGame(unittest.TestCase):
         self.assertTrue(game.join(self.r, 'game', 'alpha'))
         self.assertTrue(game.join(self.r, 'game', 'beta'))
         self.assertTrue(game.join(self.r, 'game', 'gaga'))
-        self.assertFalse(game.confirm(self.r, 'game', 'alpha'))
-        self.assertFalse(game.confirm(self.r, 'game', 'beta'))
+        self.assertTrue(game.confirm(self.r, 'game', 'alpha'))
+        self.assertTrue(game.confirm(self.r, 'game', 'beta'))
 
         info = game.get_info(self.r, 'game')
         self.assertFalse('chat' in info)
@@ -49,6 +52,7 @@ class TestGame(unittest.TestCase):
 
         self.assertEquals({'waiting': ['gaga'],
                            'confirmed': ['alpha', 'beta'],
+                           'camp': [],
                            'moved': [],
                            'table': [],
                            'captured': [],
@@ -60,15 +64,17 @@ class TestGame(unittest.TestCase):
                           info['status'])
 
     def test_chat(self):
-        game.join(self.r, 'game', 'betty')
-        game.join(self.r, 'game', 'susie')
-        game.join(self.r, 'game', 'martha')
+        self.assertTrue(game.join(self.r, 'game', 'betty'))
+        self.assertTrue(game.join(self.r, 'game', 'susie'))
+        self.assertTrue(game.join(self.r, 'game', 'martha'))
 
-        game.chat(self.r, 'game', 'rando', "what up gals")
+        self.assertTrue(game.chat(self.r, 'game', 'hero', "what up gals", True))
         time.sleep(0.1)
-        game.chat(self.r, 'game', 'betty', "who's that dude?")
+        self.assertFalse(game.chat(self.r, 'game', 'zero', "what up gals"))
         time.sleep(0.1)
-        game.chat(self.r, 'game', 'martha', "no clue")
+        self.assertTrue(game.chat(self.r, 'game', 'betty', "who's that dude?"))
+        time.sleep(0.1)
+        self.assertTrue(game.chat(self.r, 'game', 'martha', "no clue"))
         time.sleep(0.1)
 
         info = game.get_info(self.r, 'game')
@@ -79,66 +85,44 @@ class TestGame(unittest.TestCase):
 
         chats = info['chat']
         self.assertEquals(3, len(chats))
-        self.assertEquals('rando', chats[0]['speaker'])
+        self.assertEquals('hero', chats[0]['speaker'])
         self.assertEquals('what up gals', chats[0]['message'])
         self.assertEquals('betty', chats[1]['speaker'])
         self.assertEquals("who's that dude?", chats[1]['message'])
         self.assertEquals('martha', chats[2]['speaker'])
         self.assertEquals('no clue', chats[2]['message'])
 
-    # def test_starts(self):
-    #     g = Game()
-    #     g.add_player('george clinton')
-    #     g.add_player('elmo')
+    def test_confirms_only_once(self):
+        self.assertTrue(game.join(self.r, 'sesame street', 'george clinton'))
+        self.assertTrue(game.join(self.r, 'sesame street', 'elmo'))
 
-    #     self.assertFalse(g.start('george clinton'))
-    #     self.assertTrue(g.start('elmo'))
+        self.assertTrue(game.confirm(self.r, 'sesame street', 'george clinton'))
+        self.assertFalse(game.confirm(self.r, 'sesame street', 'george clinton'))
 
-    #     george_msg = g.get_status('george clinton')
-    #     # self.assertIsNotNone(george_msg)
-    #     # self.assertIsNone(g.poll('george clinton'), msg="Should be no more messages")
+    def test_personal_info(self):
+        self.assertTrue(game.join(self.r, 'sesame street', 'george clinton'))
 
-    #     elmo_msg = g.get_status('elmo')
-    #     # self.assertIsNotNone(elmo_msg)
-    #     # self.assertIsNone(g.poll('elmo'), msg="Should be no more messages")
+        george_info = game.get_info(self.r, 'sesame street', 'george clinton')
+        self.assertTrue('you' in george_info)
+        you = george_info['you']
+        self.assertEquals('george clinton', you['player'])
+        self.assertEquals(0, you['loot'])
+        self.assertEquals('waiting', you['moved'])
+        self.assertEquals([], you['artifacts.captured'])
 
-    #     self.assertEqual('george clinton', george_msg['you'])
-    #     self.assertEqual('elmo', elmo_msg['you'])
+    def test_invalid_move(self):
+        self.assertTrue(game.join(self.r, 'game', 'foo'))
+        self.assertTrue(game.join(self.r, 'game', 'bar'))
+        self.assertTrue(game.confirm(self.r, 'game', 'foo'))
+        self.assertTrue(game.confirm(self.r, 'game', 'bar'))
+        self.assertFalse(game.move(self.r, 'game', 'foo', 'blergh'))
 
-    #     self.assertEqual(1, george_msg['round'])
-    #     self.assertEqual(1, elmo_msg['round'])
-
-    #     self.assertEqual(0, elmo_msg['pot'])
-    #     self.assertEqual(0, george_msg['pot'])
-
-    #     self.assertEqual(1, len(elmo_msg['artifacts']))
-    #     self.assertEqual(1, len(george_msg['artifacts']))
-
-    #     self.assertEqual(1, len(elmo_msg['table']))
-    #     self.assertEqual(1, len(george_msg['table']))
-
-    #     self.assertEqual([{'name': 'george clinton', 'move': 'undecided'},
-    #                       {'name': 'elmo', 'move': 'undecided'}],
-    #                      elmo_msg['players'])
-    #     self.assertEqual([{'name': 'george clinton', 'move': 'undecided'},
-    #                       {'name': 'elmo', 'move': 'undecided'}],
-    #                      george_msg['players'])
-
-    # def test_invalid_move(self):
-    #     g = Game()
-    #     g.add_player('foo')
-    #     g.add_player('bar')
-    #     g.start('foo')
-    #     g.start('bar')
-    #     self.assertFalse(g.submit('foo', 'blergh'))
-
-    # def test_valid_move(self):
-    #     g = Game()
-    #     g.add_player('foo')
-    #     g.add_player('bar')
-    #     g.start('foo')
-    #     g.start('bar')
-    #     self.assertTrue(g.submit('bar', 'lando'))
+    def test_valid_move(self):
+        self.assertTrue(game.join(self.r, 'game', 'foo'))
+        self.assertTrue(game.join(self.r, 'game', 'bar'))
+        self.assertTrue(game.confirm(self.r, 'game', 'foo'))
+        self.assertTrue(game.confirm(self.r, 'game', 'bar'))
+        self.assertTrue(game.move(self.r, 'game', 'foo', 'lando'))
 
     # def test_partial_completion(self):
     #     g = Game()
