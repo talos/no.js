@@ -31,6 +31,15 @@ class TestGame(unittest.TestCase):
         game.join(self.r, 'game', 'gaga')
         self.assertFalse(game.confirm(self.r, 'game', 'alpha'))
         self.assertFalse(game.confirm(self.r, 'game', 'beta'))
+
+        info = game.get_info(self.r, game)
+        self.assertFalse('chat' in info)
+        self.assertFalse('you' in info)
+        self.assertTrue('status' in info)
+        self.assertTrue('update' in info)
+        self.assertTrue('timestamp' in info)
+        self.assertEquals(5, len(info['update']))
+
         self.assertEquals({'waiting': ['gaga'],
                            'undecided': ['alpha', 'beta'],
                            'decided': [],
@@ -41,14 +50,12 @@ class TestGame(unittest.TestCase):
                            'artifacts.destroyed': [],
                            'artifacts.seen.count': None,
                            'artifacts.in.play': []},
-                          game.get_status(self.r, 'game'))
+                          info['status'])
 
     def test_chat(self):
         game.join(self.r, 'game', 'betty')
         game.join(self.r, 'game', 'susie')
         game.join(self.r, 'game', 'martha')
-
-        betty = game.subscription(self.r, 'game', 'betty')
 
         game.chat(self.r, 'game', 'rando', "what up gals")
         time.sleep(0.1)
@@ -57,7 +64,12 @@ class TestGame(unittest.TestCase):
         game.chat(self.r, 'game', 'martha', "no clue")
         time.sleep(0.1)
 
-        chats = game.get_chats(self.r, 'game', 0)
+        info = game.get_info(self.r, 'game')
+        self.assertTrue('chat' in info)
+        self.assertTrue('status' in info)
+        self.assertTrue('update' in info)
+        self.assertTrue('status' in info)
+        self.assertTrue('timestamp' in info)
         self.assertEquals(3, len(chats))
         self.assertEquals('rando', chats[0]['speaker'])
         self.assertEquals('what up gals', chats[0]['message'])
@@ -65,10 +77,6 @@ class TestGame(unittest.TestCase):
         self.assertEquals("who's that dude?", chats[1]['message'])
         self.assertEquals('martha', chats[2]['speaker'])
         self.assertEquals('no clue', chats[2]['message'])
-
-        self.assertEquals('rando', betty.next()['chats'][0]['speaker'])
-        self.assertEquals('betty', betty.next()['chats'][0]['speaker'])
-        self.assertEquals('martha', betty.next()['chats'][0]['speaker'])
 
     # def test_starts(self):
     #     g = Game()

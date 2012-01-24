@@ -1,9 +1,9 @@
 from deck import generate_deck, generate_artifacts, card_type
+from redis import WatchError
 
 import ast
 import time
 import random
-import itertools
 
 MAX_ROUNDS = 5
 ARTIFACT_VALUES = [5, 5, 10, 10, 15] # corresponding to which artifact this is
@@ -37,56 +37,37 @@ ARTIFACTS_CAPTURED_PREFIX = 'artifacts.captured' # prefix for lists
 ARTIFACTS_DESTROYED = 'artifacts.destroyed' # list
 ARTIFACTS_SEEN_COUNT = 'artifacts.seen.count' # integer
 
+LOCK = 'lock'
+
 def path(key, *path):
     return ':'.join([key] + list(path))
 
-def get_status(r, k, player=None):
+def synchronized(func):
     """
-    Get the game's current status as a python object.
-    Will include personal data if a player is specified.
+    This decorator will cause the wrapped function to lock its key at
+    the start, and unlock it at the end.  It also synchronizes,
+    delaying execution until the lock can be obtained.
     """
-    state = {WAITING: list(r.smembers(path(k, WAITING))),
-             UNDECIDED: list(r.smembers(path(k, UNDECIDED))),
-             'decided': list(r.sunion(path(k, LANDO), path(k, HAN))),
-             TABLE: r.lrange(path(k, TABLE), 0, -1),
-             CAPTURED: r.lrange(path(k, CAPTURED), 0, -1),
-             POT: r.get(path(k, POT)),
-             ROUND: r.get(path(k, ROUND)),
-             ARTIFACTS_DESTROYED: r.lrange(path(k, ARTIFACTS_DESTROYED), 0, -1),
-             ARTIFACTS_SEEN_COUNT: r.get(path(k, ARTIFACTS_SEEN_COUNT)),
-             ARTIFACTS_IN_PLAY: r.lrange(path(k, ARTIFACTS_IN_PLAY), 0, -1)}
+    def wrapped(r, k, *args, **kwargs):
+        pipe = r.pipeline()
+        while True:
+            try:
+                pipe.watch(path(k, LOCK))
+                if pipe.exists(path(k, LOCK)):
+                    continue
+                else:
+                    pipe.multi()
+                    pipe.set(path(k, LOCK), True)
+                    pipe.execute()
+                    retval = func(r, k, *args, **kwargs)
+                    r.set(path(k, LOCK), False)
+                    return retval
+            except WatchError:
+                continue
+            finally:
+                pipe.reset()
 
-    if player:
-        if r.sismember(path(k, WAITING), player):
-            decision = WAITING
-        elif r.sismember(path(k, UNDECIDED), player):
-            decision = UNDECIDED
-        elif r.sismember(path(k, LANDO), player):
-            decision = LANDO
-        elif r.sismember(path(k, HAN), player):
-            decision = HAN
-        state['you'] = {
-            'name' : player,
-            'decision' : decision,
-            'loot' : r.hget(path(k, LOOT), player),
-            'artifacts': r.lrange(path(k, ARTIFACTS_CAPTURED_PREFIX, player), 0, -1) }
-
-    return state
-
-def get_chats(r, k, start_time, end_time=None):
-    """
-    Return a python array of chats between specified times.  end_time
-    defaults to now.  The first chat is the oldest.
-    """
-    if end_time is None:
-        end_time = time.time()
-    return [{ TIMESTAMP : entry[1],
-              SPEAKER: ast.literal_eval(entry[0])[SPEAKER],
-              MESSAGE: ast.literal_eval(entry[0])[MESSAGE] }
-            for entry in r.zrangebyscore(path(k, CHAT),
-                                         start_time,
-                                         end_time,
-                                         withscores=True)]
+    return wrapped
 
 def chat(r, k, speaker, message):
     """
@@ -94,30 +75,93 @@ def chat(r, k, speaker, message):
     """
     timestamp = time.time()
     r.zadd(path(k, CHAT), timestamp, {SPEAKER: speaker, MESSAGE: message})
-    r.publish(path(k), CHAT)
-
-def get_updates(r, k, start_time, end_time=None):
-    """
-    Return a python array of updates between specified times.  end_time
-    defaults to now.  The first update is the oldest.
-    """
-    if end_time is None:
-        end_time = time.time()
-    return [{ TIMESTAMP : entry[1],
-              UPDATE: ast.literal_eval(entry[0]) }
-            for entry in r.zrangebyscore(path(k, UPDATE),
-                                         start_time,
-                                         end_time,
-                                         withscores=True)]
+    r.publish(k, CHAT)
 
 def update(r, k, update):
     """
     Broadcast an update.
     """
     timestamp = time.time()
-    r.zadd(path(k, UPDATE), timestamp, {UPDATE: update})
-    r.publish(path(k), UPDATE)
+    r.zadd(path(k, UPDATE), timestamp, update)
+    r.publish(k, UPDATE)
 
+@synchronized
+def get_info(r, k, start_time=0, player=None):
+    """
+    Check for status updates and chats since the specified start_time.
+    If there were any status updates since the timestamp, the current
+    status will be generated as well.  The presence of chats will not
+    trigger the generation of a status object.  If there have been no
+    chats or status updates since the timestamp, this will block until
+    something happens.
+
+    If start_time is unspecified, all messages will be pulled.  If
+    player is unspecified, no player-specific data will be delivered.
+
+    Returns a python object with an array of chats (if any), an array
+    of updates (if any) a single status object (if there was an
+    update), and a single player object (if a player was specified and
+    there was an update).
+    """
+
+    now = time.time()
+    pubsub = r.pubsub()
+    pubsub.subscribe(k)
+    while True:
+        updates = [{ TIMESTAMP : entry[1],
+                     UPDATE: ast.literal_eval(entry[0]) }
+                   for entry in r.zrangebyscore(path(k, UPDATE),
+                                                start_time,
+                                                now,
+                                                withscores=True)]
+        chats = [{ TIMESTAMP : entry[1],
+                   SPEAKER: ast.literal_eval(entry[0])[SPEAKER],
+                   MESSAGE: ast.literal_eval(entry[0])[MESSAGE] }
+                 for entry in r.zrangebyscore(path(k, CHAT),
+                                              start_time,
+                                              now,
+                                              withscores=True)]
+        if len(updates) + len(chats) == 0:
+            pubsub.listen().next() # wait for an update
+        else:
+            break
+
+    info = { TIMESTAMP : now }
+    if len(chats) > 0:
+        info[CHAT] = chats
+
+    if len(updates) > 0:
+        info[UPDATE] = updates
+        info[STATUS] = {
+            WAITING: list(r.smembers(path(k, WAITING))),
+            UNDECIDED: list(r.smembers(path(k, UNDECIDED))),
+            'decided': list(r.sunion(path(k, LANDO), path(k, HAN))),
+            TABLE: r.lrange(path(k, TABLE), 0, -1),
+            CAPTURED: r.lrange(path(k, CAPTURED), 0, -1),
+            POT: r.get(path(k, POT)),
+            ROUND: r.get(path(k, ROUND)),
+            ARTIFACTS_DESTROYED: r.lrange(path(k, ARTIFACTS_DESTROYED), 0, -1),
+            ARTIFACTS_SEEN_COUNT: r.get(path(k, ARTIFACTS_SEEN_COUNT)),
+            ARTIFACTS_IN_PLAY: r.lrange(path(k, ARTIFACTS_IN_PLAY), 0, -1)}
+
+        if player:
+            if r.sismember(path(k, WAITING), player):
+                decision = WAITING
+            elif r.sismember(path(k, UNDECIDED), player):
+                decision = UNDECIDED
+            elif r.sismember(path(k, LANDO), player):
+                decision = LANDO
+            elif r.sismember(path(k, HAN), player):
+                decision = HAN
+            info['you'] = {
+                'name' : player,
+                'decision' : decision,
+                'loot' : r.hget(path(k, LOOT), player),
+                'artifacts': r.lrange(path(k, ARTIFACTS_CAPTURED_PREFIX, player), 0, -1) }
+
+    return info
+
+@synchronized
 def join(r, k, player):
     """
     Add a player to the waiting room.  Returns True if they have
@@ -125,11 +169,13 @@ def join(r, k, player):
     the game is not yet started.
     """
     if(r.exists(path(k, ROUND)) is False):
+        r.multi()
         if r.sadd(path(k, WAITING), player) == 1:
             r.publish(path(k, STATUS), "%s joined the game." % player)
             return True
     return False
 
+@synchronized
 def confirm(r, k, player):
     """
     Player wants to start the next round.  If all players
@@ -160,6 +206,7 @@ def confirm(r, k, player):
 
     return False
 
+@synchronized
 def move(r, k, player, move):
     """
     Submit a move for the specified player in the current round.
@@ -243,25 +290,6 @@ def move(r, k, player, move):
             r.delete(path(k, CAMP))
 
     return True
-
-def subscription(r, k, player=None):
-    """
-    Returns an iterable subscription for game events for the specified
-    player, or generically if no player is specified.
-    """
-
-    # def msg_parse(m):
-    #     if m['channel'] == path(k, STATUS):
-    #         return { 'status': get_status(r, k, player),
-    #                  'update': m['data'] }
-    #     elif m['channel'] == path(k, CHAT):
-    #         return { 'chats': get_chats(r, k, m['data'], m['data']) }
-
-    pubsub = r.pubsub()
-    pubsub.subscribe(
-    # pubsub.subscribe([path(k, STATUS), path(k, CHAT)])
-    # return itertools.imap(lambda m: m['data']
-    #     itertools.ifilter(lambda m: m['type'] == 'message', pubsub.listen()) )
 
 # def _determine_victors(self):
 #     """
