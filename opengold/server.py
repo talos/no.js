@@ -58,13 +58,14 @@ class StatusHandler(WebMessageHandler, PlayerMixin):
 
 class PollHandler(WebMessageHandler):
 
-    def post(self, game_name):
+    def post(self, game):
         """
-        Poll for updates to game.  Returns chats and statuses.
+        Poll for updates to game.  Returns chats and statuses.  Blocks
+        until something comes down.
         """
-        for message in game.subscribe(self.db_conn, game_name, self.get_player(game_name)):
-            self.set_body(json.dumps(message))
-            return self.render()
+        subscription = game.subscription(self.db_conn, game, self.get_player(game))
+        self.set_body(json.dumps(subscription.next()))
+        return self.render()
 
 
 class ChatHandler(WebMessageHandler):

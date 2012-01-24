@@ -1,12 +1,20 @@
 from deck import generate_deck, generate_artifacts, card_type
+
+import ast
 import time
 import random
+import itertools
 
 MAX_ROUNDS = 5
 ARTIFACT_VALUES = [5, 5, 10, 10, 15] # corresponding to which artifact this is
 
 STATUS = 'status'
 CHAT = 'chat'
+UPDATE = 'update'
+
+SPEAKER = 'speaker'
+MESSAGE = 'message'
+TIMESTAMP = 'timestamp'
 
 ROUND = 'round' # integer
 
@@ -30,23 +38,23 @@ ARTIFACTS_DESTROYED = 'artifacts.destroyed' # list
 ARTIFACTS_SEEN_COUNT = 'artifacts.seen.count' # integer
 
 def path(key, *path):
-    return ':'.join([key] + path)
+    return ':'.join([key] + list(path))
 
 def get_status(r, k, player=None):
     """
     Get the game's current status as a python object.
     Will include personal data if a player is specified.
     """
-    state = {'waiting': r.smembers(path(k, WAITING)),
-             'undecided': r.smembers(path(k, UNDECIDED)),
-             'decided': r.smembers(path(k, LANDO)) + r.smembers(path(k, HAN)),
-             'table': r.lrange(path(k, TABLE), 0, -1),
-             'captured': r.lrange(path(k, CAPTURED), 0, -1),
-             'pot': r.get(path(k, POT)),
-             'round': r.get(path(k, ROUND)),
-             'artifacts_destroyed' : r.lrange(path(k, ARTIFACTS_DESTROYED), 0, -1),
-             'artifacts_seen': r.get(path(k, ARTIFACTS_SEEN_COUNT)),
-             'artifacts_in_play': r.lrange(path(k, ARTIFACTS_IN_PLAY), 0, -1)}
+    state = {WAITING: list(r.smembers(path(k, WAITING))),
+             UNDECIDED: list(r.smembers(path(k, UNDECIDED))),
+             'decided': list(r.sunion(path(k, LANDO), path(k, HAN))),
+             TABLE: r.lrange(path(k, TABLE), 0, -1),
+             CAPTURED: r.lrange(path(k, CAPTURED), 0, -1),
+             POT: r.get(path(k, POT)),
+             ROUND: r.get(path(k, ROUND)),
+             ARTIFACTS_DESTROYED: r.lrange(path(k, ARTIFACTS_DESTROYED), 0, -1),
+             ARTIFACTS_SEEN_COUNT: r.get(path(k, ARTIFACTS_SEEN_COUNT)),
+             ARTIFACTS_IN_PLAY: r.lrange(path(k, ARTIFACTS_IN_PLAY), 0, -1)}
 
     if player:
         if r.sismember(path(k, WAITING), player):
@@ -65,11 +73,50 @@ def get_status(r, k, player=None):
 
     return state
 
-def get_chats(r, k, start_time):
+def get_chats(r, k, start_time, end_time=None):
     """
-    Return a python array of chats after the specified time.
+    Return a python array of chats between specified times.  end_time
+    defaults to now.  The first chat is the oldest.
     """
-    return r.zrevrange(path(k, CHAT), start_time, time.time())
+    if end_time is None:
+        end_time = time.time()
+    return [{ TIMESTAMP : entry[1],
+              SPEAKER: ast.literal_eval(entry[0])[SPEAKER],
+              MESSAGE: ast.literal_eval(entry[0])[MESSAGE] }
+            for entry in r.zrangebyscore(path(k, CHAT),
+                                         start_time,
+                                         end_time,
+                                         withscores=True)]
+
+def chat(r, k, speaker, message):
+    """
+    Broadcast chat message to all players.
+    """
+    timestamp = time.time()
+    r.zadd(path(k, CHAT), timestamp, {SPEAKER: speaker, MESSAGE: message})
+    r.publish(path(k), CHAT)
+
+def get_updates(r, k, start_time, end_time=None):
+    """
+    Return a python array of updates between specified times.  end_time
+    defaults to now.  The first update is the oldest.
+    """
+    if end_time is None:
+        end_time = time.time()
+    return [{ TIMESTAMP : entry[1],
+              UPDATE: ast.literal_eval(entry[0]) }
+            for entry in r.zrangebyscore(path(k, UPDATE),
+                                         start_time,
+                                         end_time,
+                                         withscores=True)]
+
+def update(r, k, update):
+    """
+    Broadcast an update.
+    """
+    timestamp = time.time()
+    r.zadd(path(k, UPDATE), timestamp, {UPDATE: update})
+    r.publish(path(k), UPDATE)
 
 def join(r, k, player):
     """
@@ -82,14 +129,6 @@ def join(r, k, player):
             r.publish(path(k, STATUS), "%s joined the game." % player)
             return True
     return False
-
-def chat(r, k, speaker, message):
-    """
-    Broadcast chat message to all players.
-    """
-    timestamp = time.time()
-    r.zadd(path(k, CHAT), timestamp, {'speaker': speaker, 'message': message})
-    r.publish(path(k, CHAT), timestamp)
 
 def confirm(r, k, player):
     """
@@ -106,11 +145,11 @@ def confirm(r, k, player):
         return False
 
     if(r.scard(path(k, WAITING)) == 0 and r.scard(path(k, UNDECIDED)) > 1):
-        if not r.exists(path(k, ROUND)):  # haven't started yet
+        if not r.exists(path(k, ROUND)):  # game hasn't started yet
             r.rpush(path(k, DECK), *generate_deck())
             r.rpush(path(k, ARTIFACTS_UNSEEN), *generate_artifacts())
             r.publish(path(k, STATUS), "Game started" )
-        else:
+
         r.incr(path(k, ROUND))
         new_artifact = r.rpop(path(k, ARTIFACTS_UNSEEN))
         r.publish(path(k, STATUS), "Moving on to round %s: %s in play"
@@ -205,15 +244,24 @@ def move(r, k, player, move):
 
     return True
 
-def subscribe(r, k, player):
+def subscription(r, k, player=None):
+    """
+    Returns an iterable subscription for game events for the specified
+    player, or generically if no player is specified.
+    """
+
+    # def msg_parse(m):
+    #     if m['channel'] == path(k, STATUS):
+    #         return { 'status': get_status(r, k, player),
+    #                  'update': m['data'] }
+    #     elif m['channel'] == path(k, CHAT):
+    #         return { 'chats': get_chats(r, k, m['data'], m['data']) }
+
     pubsub = r.pubsub()
-    for m in pubsub.subscribe(path(k, STATUS), path(k, CHAT)):
-        if m['type'] == 'message':
-            if m['channel'] == path(k, STATUS):
-                yield { 'status': get_status(r, k, player)
-                         'update': m['data'] }
-            elif m['channel'] == path(k, CHAT):
-                yield { 'chat': r.zrangebyscore(path(k, CHAT), m['data']) }
+    pubsub.subscribe(
+    # pubsub.subscribe([path(k, STATUS), path(k, CHAT)])
+    # return itertools.imap(lambda m: m['data']
+    #     itertools.ifilter(lambda m: m['type'] == 'message', pubsub.listen()) )
 
 # def _determine_victors(self):
 #     """
