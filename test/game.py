@@ -16,6 +16,8 @@ import opengold.game as game
 #from random import choice
 from threading import Thread
 
+from helpers import fake_deal
+
 class TestGame(unittest.TestCase):
 
     def setUp(self):
@@ -131,6 +133,8 @@ class TestGame(unittest.TestCase):
         george_info = game.get_info(self.r, 'sesame street', 'george clinton')
         self.assertIn('you', george_info)
         self.assertDictContainsSubset({'name': 'george clinton',
+                                       'artifacts.captured': [],
+                                       'loot': 0,
                                        'location': 'camp'}, george_info['you'])
 
     def test_invalid_move(self):
@@ -139,6 +143,28 @@ class TestGame(unittest.TestCase):
         self.assertTrue(game.enter_temple(self.r, 'game', 'foo'))
         self.assertTrue(game.enter_temple(self.r, 'game', 'bar'))
         self.assertFalse(game.move(self.r, 'game', 'foo', 'blergh'))
+
+    def test_double_move_prohibited(self):
+        self.assertTrue(game.join(self.r, 'game', 'foo'))
+        self.assertTrue(game.join(self.r, 'game', 'bar'))
+        self.assertTrue(game.join(self.r, 'game', 'baz'))
+        self.assertTrue(game.enter_temple(self.r, 'game', 'foo'))
+        self.assertTrue(game.enter_temple(self.r, 'game', 'baz'))
+        self.assertTrue(game.enter_temple(self.r, 'game', 'bar'))
+        self.assertTrue(game.move(self.r, 'game', 'bar', 'lando'))
+        self.assertTrue(game.move(self.r, 'game', 'foo', 'han'))
+        self.assertFalse(game.move(self.r, 'game', 'bar', 'han'))
+
+    def test_cannot_enter_after_move(self):
+        self.assertTrue(game.join(self.r, 'game', 'foo'))
+        self.assertTrue(game.join(self.r, 'game', 'bar'))
+        self.assertTrue(game.join(self.r, 'game', 'baz'))
+        self.assertTrue(game.enter_temple(self.r, 'game', 'foo'))
+        self.assertTrue(game.enter_temple(self.r, 'game', 'baz'))
+        self.assertTrue(game.enter_temple(self.r, 'game', 'bar'))
+        self.assertTrue(game.move(self.r, 'game', 'bar', 'lando'))
+        self.assertTrue(game.move(self.r, 'game', 'foo', 'han'))
+        self.assertFalse(game.enter_temple(self.r, 'game', 'bar'))
 
     def test_valid_move(self):
         self.assertTrue(game.join(self.r, 'game', 'foo'))
@@ -198,6 +224,8 @@ class TestGame(unittest.TestCase):
         self.assertEquals({
                 'name': 'foo',
                 'location': 'temple',
+                'loot': 0,
+                'artifacts.captured': [],
                 'decision': 'lando' }, foo['you'])
 
         bar = game.get_info(self.r, 'game', 'bar')
@@ -205,6 +233,8 @@ class TestGame(unittest.TestCase):
 
         self.assertEquals({
                 'name': 'bar',
+                'loot': 0,
+                'artifacts.captured': [],
                 'location': 'temple' }, bar['you'])
 
     def test_blocking_info(self):
@@ -274,6 +304,113 @@ class TestGame(unittest.TestCase):
                              'location': 'camp',
                              'decision': False}]}, info['status'])
 
+    def test_artifact_destruction(self):
+        self.assertTrue(game.join(self.r, 'game', 'socrates'))
+        self.assertTrue(game.join(self.r, 'game', 'aristotle'))
+
+        fake_deal(self.r, 'game:deck', 'tube')
+        fake_deal(self.r, 'game:artifacts.unseen', 'tube')
+
+        self.assertTrue(game.enter_temple(self.r, 'game', 'socrates'))
+        self.assertTrue(game.enter_temple(self.r, 'game', 'aristotle'))
+        self.assertTrue(game.move(self.r, 'game', 'socrates', 'lando'))
+        self.assertTrue(game.move(self.r, 'game', 'aristotle', 'lando'))
+
+        info = game.get_info(self.r, 'game')
+        self.assertDictContainsSubset({'camp': 'socrates', 'id': 1}, info['update'][0])
+        self.assertDictContainsSubset({'camp': 'aristotle', 'id': 2}, info['update'][1])
+        self.assertDictContainsSubset({'temple': 'socrates', 'id': 3}, info['update'][2])
+        self.assertDictContainsSubset({'temple': 'aristotle', 'id': 4}, info['update'][3])
+        self.assertDictContainsSubset({'round': 1, 'id': 5}, info['update'][4])
+        self.assertDictContainsSubset({'artifacts.in.play': 'tube', 'id': 6}, info['update'][5])
+        self.assertDictContainsSubset({'card': 'tube', 'id': 7}, info['update'][6])
+        self.assertDictContainsSubset({'artifacts.seen.count': 1, 'id': 8}, info['update'][7])
+        self.assertDictContainsSubset({'decision': 'socrates', 'id': 9}, info['update'][8])
+        self.assertDictContainsSubset({'decision': 'aristotle', 'id': 10}, info['update'][9])
+        self.assertDictContainsSubset({'artifacts.destroyed':
+                                           {'players': ['aristotle', 'socrates'],
+                                            'card': 'tube',
+                                            'value': 5},
+                                       'id': 11 }, info['update'][10])
+        self.assertDictContainsSubset({'captured':
+                                           {'players': ['aristotle', 'socrates'],
+                                            'value': 0,
+                                            'pot': 0 },
+                                       'id': 12}, info['update'][11])
+
+        self.assertDictContainsSubset({
+                'pot': 0,
+                'captured': [],
+                'artifacts.in.play': [],
+                'artifacts.seen.count': 1,
+                'artifacts.destroyed': ['tube'] }, info['status'])
+
+        self.assertEquals({'name': 'aristotle',
+                           'loot': 0,
+                           'artifacts.captured': [],
+                           'location': 'camp'},
+                          game.get_info(self.r, 'game', 'aristotle')['you'])
+
+        self.assertEquals({'name': 'socrates',
+                           'loot': 0,
+                           'artifacts.captured': [],
+                           'location': 'camp'},
+                          game.get_info(self.r, 'game', 'socrates')['you'])
+
+    def test_artifact_capture(self):
+        self.assertTrue(game.join(self.r, 'game', 'socrates'))
+        self.assertTrue(game.join(self.r, 'game', 'aristotle'))
+
+        fake_deal(self.r, 'game:deck', 'tube')
+        fake_deal(self.r, 'game:artifacts.unseen', 'tube')
+
+        self.assertTrue(game.enter_temple(self.r, 'game', 'socrates'))
+        self.assertTrue(game.enter_temple(self.r, 'game', 'aristotle'))
+        self.assertTrue(game.move(self.r, 'game', 'socrates', 'han'))
+        self.assertTrue(game.move(self.r, 'game', 'aristotle', 'lando'))
+
+        info = game.get_info(self.r, 'game')
+
+        self.assertDictContainsSubset({'camp': 'socrates', 'id': 1}, info['update'][0])
+        self.assertDictContainsSubset({'camp': 'aristotle', 'id': 2}, info['update'][1])
+        self.assertDictContainsSubset({'temple': 'socrates', 'id': 3}, info['update'][2])
+        self.assertDictContainsSubset({'temple': 'aristotle', 'id': 4}, info['update'][3])
+        self.assertDictContainsSubset({'round': 1, 'id': 5}, info['update'][4])
+        self.assertDictContainsSubset({'artifacts.in.play': 'tube', 'id': 6}, info['update'][5])
+        self.assertDictContainsSubset({'card': 'tube', 'id': 7}, info['update'][6])
+        self.assertDictContainsSubset({'artifacts.seen.count': 1, 'id': 8}, info['update'][7])
+        self.assertDictContainsSubset({'decision': 'socrates', 'id': 9}, info['update'][8])
+        self.assertDictContainsSubset({'decision': 'aristotle', 'id': 10}, info['update'][9])
+        self.assertDictContainsSubset({'artifacts.captured':
+                                           {'players': 'aristotle',
+                                            'card': 'tube',
+                                            'value': 5},
+                                       'id': 11 }, info['update'][10])
+        self.assertDictContainsSubset({'captured':
+                                           {'players': ['aristotle'],
+                                            'value': 5,
+                                            'pot': 0 },
+                                       'id': 12}, info['update'][11])
+
+        self.assertDictContainsSubset({
+                'pot': 0,
+                'captured': [],
+                'artifacts.in.play': [],
+                'artifacts.seen.count': 1,
+                'artifacts.destroyed': [] }, info['status'])
+
+        self.assertEquals({'name': 'aristotle',
+                           'loot': 5,
+                           'artifacts.captured': ['tube'],
+                           'location': 'camp'},
+                          game.get_info(self.r, 'game', 'aristotle')['you'])
+
+        self.assertEquals({'name': 'socrates',
+                           'loot': 0,
+                           'artifacts.captured': [],
+                           'location': 'temple'},
+                          game.get_info(self.r, 'game', 'socrates')['you'])
+
     def test_second_round(self):
         self.assertTrue(game.join(self.r, 'game', 'socrates'))
         self.assertTrue(game.join(self.r, 'game', 'aristotle'))
@@ -303,42 +440,70 @@ class TestGame(unittest.TestCase):
                              'location': 'temple',
                              'decision': False}]}, info['status'])
 
-    # def test_double_hans(self):
-    #     g = Game()
-    #     g.add_player('socrates')
-    #     g.add_player('aristotle')
-    #     g.start('socrates')
-    #     g.start('aristotle')
+    def test_full_game(self):
+        self.assertTrue(game.join(self.r, 'game', 'socrates'))
+        self.assertTrue(game.join(self.r, 'game', 'aristotle'))
 
-    #     while True:
-    #         g.submit('socrates', 'han')
-    #         g.submit('aristotle', 'han')
-    #         if g.get_status()['round'] is 2:
-    #             break
+        self.assertTrue(game.chat(self.r, 'game', 'aristotle', 'what up soc'))
 
-    #     # in case of double-hans, neither player gets loot
-    #     self.assertEquals(0, g.get_status('socrates')['loot'])
-    #     self.assertEquals(0, g.get_status('aristotle')['loot'])
+        info = game.get_info(self.r, 'game')
+        self.assertEquals(3, info['id'])
+        self.assertEquals(2, len(info['update']))
+        self.assertDictContainsSubset({'camp': 'socrates', 'id': 1}, info['update'][0])
+        self.assertDictContainsSubset({'camp': 'aristotle', 'id': 2}, info['update'][1])
+        self.assertEquals(1, len(info['chat']))
+        self.assertDictContainsSubset({'speaker': 'aristotle',
+                                       'message': 'what up soc',
+                                       'id': 3}, info['chat'][0])
+        self.assertEquals({
+                'players': [{'name': 'aristotle',
+                             'location': 'camp',
+                             'decision': False},
+                            {'name': 'socrates',
+                             'location': 'camp',
+                             'decision': False}],
+                'pot': 0,
+                'round': 0,
+                'table': [],
+                'captured': [],
+                'artifacts.in.play': [],
+                'artifacts.seen.count': 0,
+                'artifacts.destroyed': [] }, info['status'])
 
-    # def test_simulation(self):
-    #     players = [Player('plato'),
-    #                Player('socrates'),
-    #                Player('aristotle')]
+        # self.assertFalse(game.move(self.r, 'game', 'aristotle', 'han'))
+        # self.assertTrue(game.enter_temple(self.r, 'game', 'aristotle'))
 
-    #     game = Game(players)
+        # self.assertEquals({
+        #         'players': [{'name': 'aristotle',
+        #                      'location': 'camp',
+        #                      'decision': False},
+        #                     {'name': 'plato',
+        #                      'location': 'camp',
+        #                      'decision': False},
+        #                     {'name': 'socrates',
+        #                      'location': 'camp',
+        #                      'decision': False},
 
-    #     self.assertEquals(1, game.round_num)
+        # self.assertTrue(game.join(self.r, 'game', 'plato'))
 
-    #     def loop():
-    #         for player in players:
-    #             result = game.submit(player, choice(['han', 'lando']))
-    #             if result == True:
-    #                 return False
-    #         return True
+        # self.assertEquals({
+        #         'players': [{'name': 'aristotle',
+        #                      'location': 'camp',
+        #                      'decision': False},
+        #                     {'name': 'plato',
+        #                      'location': 'camp',
+        #                      'decision': False},
+        #                     {'name': 'socrates',
+        #                      'location': 'camp',
+        #                      'decision': False},
+        #         }, game.get_info(self.r, 'game'))
 
-    #     while(loop()):
-    #         pass
+        # fake_deal(self.r, 'game:artifacts.unseen', 'tube')
+        # fake_deal(self.r, 'game:deck', 'bitches')
 
+        # self.assertTrue(game.enter_temple(self.r, 'game', 'socrates'))
+        # self.assertTrue(game.enter_temple(self.r, 'game', 'aristotle'))
+        # self.assertTrue(game.enter_temple(self.r, 'game', 'plato'))
 
 # Primitive runner!
 if __name__ == '__main__':

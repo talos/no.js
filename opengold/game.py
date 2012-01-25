@@ -160,7 +160,8 @@ def get_info(r, k, player=None, start_id=0, signal={}):
     """
     Calls generate_info if there has been activity since start_id,
     which defaults to 0.  If there has not been activity, blocks until
-    there is.
+    there is.  This currently blocks on a nonexistent game until
+    something happens to it!
 
     If signal is passed, making 'stop' in signal Truthy will terminate
     this call.
@@ -221,7 +222,10 @@ def generate_info(r, k, player=None, start_id=0):
             ARTIFACTS_IN_PLAY: [get_card(idx).name for idx in r.lrange(path(k, ARTIFACTS_IN_PLAY), 0, -1)]}
 
         if player:
-            info[YOU] = next((p for p in players if p[NAME] == player), None)
+            you = next((p for p in players if p[NAME] == player), None)
+            you[ARTIFACTS_CAPTURED] = [get_card(idx).name for idx in r.lrange(path(k, PLAYERS, player, ARTIFACTS_CAPTURED), 0, -1)]
+            you[LOOT] = int(you.get(LOOT, 0))
+            info[YOU] = you
 
     return info
 
@@ -310,7 +314,7 @@ def move(r, k, player, move):
         ####
         # LANDO LOVES LOOT
         ####
-        landos = map(lambda p: p[NAME], filter(lambda p: p[DECISION] == D_LANDO, players))
+        landos = sorted(map(lambda p: p[NAME], filter(lambda p: p[DECISION] == D_LANDO, players)))
         if len(landos) > 0:
             loot = r.get(path(k, POT)) or 0
             for card_idx in r.lrange(path(k, TABLE), 0, -1):
@@ -319,23 +323,23 @@ def move(r, k, player, move):
                     loot += card.value
                     r.lrem(path(k, TABLE), 1, card_idx)
                     r.rpush(path(k, CAPTURED), card_idx)
-                    #r.rpush(path(k, DECK), card)
                 elif isinstance(card, Artifact):
                     r.lrem(path(k, TABLE), 1, card_idx)
+                    artifact_value = ARTIFACT_VALUES[int(r.get(path(k, ARTIFACTS_SEEN_COUNT)) or 0)]
+                    r.lrem(path(k, ARTIFACTS_IN_PLAY), 1, card_idx)
                     if len(landos) == 1: #  lucky lando
-                        artifact_value = ARTIFACT_VALUES[int(r.get(path(k, ARTIFACTS_SEEN_COUNT)) or 0)]
                         _update(r, k,
-                               { ARTIFACTS_CAPTURED :
-                                     { PLAYERS : landos[0],
-                                       CARD: card,
-                                       VALUE: artifact_value } })
+                                { ARTIFACTS_CAPTURED :
+                                      { PLAYERS : landos[0],
+                                        CARD: card.name,
+                                        VALUE: artifact_value } })
                         loot += artifact_value
                         r.rpush(path(k, PLAYERS, landos[0], ARTIFACTS_CAPTURED), card_idx)
                     else:
                         _update(r, k,
                                { ARTIFACTS_DESTROYED :
                                      { PLAYERS : landos,
-                                       CARD: card,
+                                       CARD: card.name,
                                        VALUE: artifact_value } })
                         r.rpush(path(k, ARTIFACTS_DESTROYED), card_idx)
 
@@ -357,7 +361,7 @@ def move(r, k, player, move):
         ####
         # HANS VENTURE FORTH
         ####
-        hans = map(lambda p: p[NAME], filter(lambda p: p[DECISION] == D_HAN, players))
+        hans = sorted(map(lambda p: p[NAME], filter(lambda p: p[DECISION] == D_HAN, players)))
         if len(hans) > 0:
             card = _deal_card(r, k)
 
