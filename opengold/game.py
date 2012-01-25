@@ -19,6 +19,7 @@ MESSAGE = 'message'
 TIMESTAMP = 'timestamp'
 JOINED = 'joined'
 MOVED = 'moved'
+YOU = 'you'
 
 VALUE = 'value'
 PLAYER = 'player'
@@ -26,14 +27,17 @@ PLAYERS = 'players'
 CARD = 'card'
 DEATH = 'death'
 VENTURING = 'venturing'
+CHAT = 'chat'
+UPDATE = 'update'
 
 ###
 #
 # Redis keys
 #
 ###
-CHAT = 'chat' # sorted set
-UPDATE = 'update' # sorted set
+INFO_ID = 'id' # integer
+INFO = 'info' # list
+
 ROUND = 'round' # integer
 
 ALL_PLAYERS = 'players' #set
@@ -57,6 +61,12 @@ ARTIFACTS_DESTROYED = 'artifacts.destroyed' # list
 ARTIFACTS_SEEN_COUNT = 'artifacts.seen.count' # integer
 
 LOCK = 'lock'
+
+def timestamp():
+    """
+    Convenience method that returns milliseconds since the UNIX epoch.
+    """
+    return int(time.time() * 1000)
 
 def path(key, *path):
     return ':'.join([key] + list(path))
@@ -98,9 +108,11 @@ def chat(r, k, speaker, message, superuser=False):
     Returns True if the message was submitted, False otherwise.
     """
     if r.sismember(path(k, ALL_PLAYERS), speaker) or superuser:
-        timestamp = time.time()
-
-        r.zadd(path(k, CHAT), timestamp, {SPEAKER: speaker, MESSAGE: message})
+        r.rpush(path(k, INFO), { CHAT:
+               { SPEAKER: speaker,
+                 MESSAGE: message,
+                 INFO_ID: r.incr(path(k, INFO_ID)),
+                 TIMESTAMP: timestamp() }})
         r.publish(k, CHAT)
         return True
     else:
@@ -108,66 +120,61 @@ def chat(r, k, speaker, message, superuser=False):
 
 def _update(r, k, update):
     """
-    Broadcast an update.  This should not be called externally.
+    Broadcast an update.  This should not be called externally.  The
+    update must be a dict.
     """
-    timestamp = time.time()
-    r.zadd(path(k, UPDATE), timestamp, update)
+    update[TIMESTAMP] = timestamp()
+    update[INFO_ID] = r.incr(path(k, INFO_ID))
+    r.rpush(path(k, INFO), { UPDATE: update })
     r.publish(k, UPDATE)
 
 def _deal_card(r, k):
     """
     Deal a single card.  This should not be called externally.
+
+    A single card is moved from a random point in the deck onto the
+    right side of the table.
     """
-    card = r.lindex(path(k, DECK), random.randint(0, r.llen(path(k, DECK))))
+    card = r.lindex(path(k, DECK), random.randint(0, r.llen(path(k, DECK)) - 1))
+    r.rpush(path(k, TABLE), r.lrem(path(k, DECK), 1, card))
     _update(r, k, { CARD : card })
 
     if card_type(card) == 'artifact':
-        artifacts_seen_count = r.incr(path(r, ARTIFACTS_SEEN_COUNT))
-        _update(r, k, { ARTIFACTS_SEEN_COUNT: artifacts_seen_count })
+        artifacts_seen_count = r.incr(path(k, ARTIFACTS_SEEN_COUNT))
+        _update(r, k, { ARTIFACTS_SEEN_COUNT: int(artifacts_seen_count) })
 
 @synchronized
-def get_info(r, k, player=None, start_time=0 ):
+def get_info(r, k, player=None, start_id=0 ):
     """
-    Check for status updates and chats since the specified start_time.
-    If there were any status updates since the timestamp, the current
-    status will be generated as well.  The presence of chats will not
-    trigger the generation of a status object.  If there have been no
-    chats or status updates since the timestamp, this will block until
-    something happens.
+    Check for status updates and chats since the specified start_id,
+    inclusive.  If there were any status updates since the id, the
+    current status will be generated as well.  The presence of chats
+    will not trigger the generation of a status object.  If there have
+    been no chats or status updates since the timestamp, this will
+    block until something happens.
 
-    If start_time is unspecified, all messages will be pulled.  If
+    If start_id is unspecified, all messages will be pulled.  If
     player is unspecified, no player-specific data will be delivered.
 
     Returns a python object with an array of chats (if any), an array
-    of updates (if any) a single status object (if there was an
+    of updates (if any), a single status object (if there was an
     update), and a single player object (if a player was specified and
     there was an update).
     """
 
-    now = time.time()
     pubsub = r.pubsub()
     pubsub.subscribe(k)
 
     while True:
-        updates = [{ TIMESTAMP : entry[1],
-                     UPDATE: ast.literal_eval(entry[0]) }
-                   for entry in r.zrangebyscore(path(k, UPDATE),
-                                                start_time,
-                                                now,
-                                                withscores=True)]
-        chats = [{ TIMESTAMP : entry[1],
-                   SPEAKER: ast.literal_eval(entry[0])[SPEAKER],
-                   MESSAGE: ast.literal_eval(entry[0])[MESSAGE] }
-                 for entry in r.zrangebyscore(path(k, CHAT),
-                                              start_time,
-                                              now,
-                                              withscores=True)]
-        if len(updates) + len(chats) == 0:
+        all_info = [ast.literal_eval(entry) for entry in r.lrange(path(k, INFO), start_id, -1)]
+        if len(all_info) == 0:
             pubsub.listen().next() # wait for an update
         else:
+            chats = [i[CHAT] for i in filter(lambda i: CHAT in i, all_info)]
+            updates = [i[UPDATE] for i in filter(lambda i: UPDATE in i, all_info)]
             break
 
-    info = { TIMESTAMP : now }
+    info = { INFO_ID: int(r.get(path(k, INFO_ID)) or 0) }
     if len(chats) > 0:
         info[CHAT] = chats
 
@@ -180,10 +187,10 @@ def get_info(r, k, player=None, start_time=0 ):
             MOVED: list(r.sunion(path(k, LANDO), path(k, HAN))),
             TABLE: r.lrange(path(k, TABLE), 0, -1),
             CAPTURED: r.lrange(path(k, CAPTURED), 0, -1),
-            POT: r.get(path(k, POT)),
-            ROUND: r.get(path(k, ROUND)),
+            POT: int(r.get(path(k, POT)) or 0),
+            ROUND: int(r.get(path(k, ROUND)) or 0),
             ARTIFACTS_DESTROYED: r.lrange(path(k, ARTIFACTS_DESTROYED), 0, -1),
-            ARTIFACTS_SEEN_COUNT: r.get(path(k, ARTIFACTS_SEEN_COUNT)),
+            ARTIFACTS_SEEN_COUNT: int(r.get(path(k, ARTIFACTS_SEEN_COUNT)) or 0),
             ARTIFACTS_IN_PLAY: r.lrange(path(k, ARTIFACTS_IN_PLAY), 0, -1)}
 
         if player:
@@ -197,10 +204,10 @@ def get_info(r, k, player=None, start_time=0 ):
                 decision = LANDO
             elif r.sismember(path(k, HAN), player):
                 decision = HAN
-            info['you'] = {
+            info[YOU] = {
                 PLAYER : player,
                 MOVED : decision,
-                LOOT : r.hget(path(k, LOOT), player) or 0,
+                LOOT : int(r.hget(path(k, LOOT), player) or 0),
                 ARTIFACTS_CAPTURED_PREFIX: r.lrange(path(k, ARTIFACTS_CAPTURED_PREFIX, player), 0, -1) }
 
     return info
@@ -238,15 +245,26 @@ def confirm(r, k, player):
     else:
         return False
 
-    if(r.scard(path(k, WAITING)) == 0 and r.scard(path(k, CONFIRMED)) > 1):
-        if not r.exists(path(k, ROUND)):  # game hasn't started yet
+    num_players = r.scard(path(k, ALL_PLAYERS))
+
+    # This is safe because a successful move from WAITING to CONFIRMED preceded it.
+    if(r.scard(path(k, WAITING)) == 0 and
+       r.scard(path(k, CONFIRMED)) == num_players and
+       num_players > 1):
+        # game hasn't started yet
+        if not r.exists(path(k, ROUND)):
             r.rpush(path(k, DECK), *generate_deck())
             r.rpush(path(k, ARTIFACTS_UNSEEN), *generate_artifacts())
-            _update(r, k, { CONFIRMED: list(r.smembers(path(k, CONFIRMED))) } )
+        else:
+            # push everything on the table and captured back into the deck
+            while r.rpoplpush(path(k, TABLE), path(k, DECK)):
+                continue
+            while r.poplpush(path(k, CAPTURED), path(k, DECK)):
+                continue
 
         _round = r.incr(path(k, ROUND))
         new_artifact = r.rpop(path(k, ARTIFACTS_UNSEEN))
-        _update(r, k, { ROUND: _round } )
+        _update(r, k, { ROUND: int(_round) } )
         _update(r, k, { ARTIFACTS_IN_PLAY: new_artifact } )
         r.lpush(path(k, DECK), new_artifact)
         r.lpush(path(k, ARTIFACTS_IN_PLAY), new_artifact)
@@ -283,11 +301,11 @@ def move(r, k, player, move):
                     loot += card
                     r.lrem(path(k, TABLE), 1, card)
                     r.rpush(path(k, CAPTURED), card)
-                    r.rpush(path(k, DECK), card)
+                    #r.rpush(path(k, DECK), card)
                 elif t == 'artifact':
                     r.lrem(path(k, TABLE), 1, card)
                     if len(landos) == 1: #  lucky lando
-                        artifact_value = ARTIFACT_VALUES[r.get(path(k, ARTIFACTS_SEEN_COUNT)) or 0]
+                        artifact_value = ARTIFACT_VALUES[int(r.get(path(k, ARTIFACTS_SEEN_COUNT)) or 0)]
                         _update(r, k,
                                { ARTIFACTS_CAPTURED_PREFIX :
                                      { PLAYER : landos[0],
@@ -326,16 +344,15 @@ def move(r, k, player, move):
             _deal_card(r, k)
 
             # DEATH
-            if card_type(card) == 'hazard' and card in r.lrange(path(k, TABLE), 0, -1):
+            if card_type(card) == 'hazard' and card in r.lrange(path(k, TABLE), 0, -2):
                 _update(r, k, { DEATH : { PLAYERS: hans,
-                                         CARD: card } })
+                                          CARD: card } })
                 r.sunionstore(path(k, WAITING), path(k, HAN), path(k, CAMP))
                 r.delete(path(k, CAMP))
             else:
                 _update(r, k, { VENTURING : hans } )
                 r.sunionstore(path(k, CONFIRMED), path(k, HAN))
             r.delete(path(k, HAN))
-            r.rpush(path(k, TABLE), r.lrem(path(k, DECK), 1, card))
         ####
         # END VENTURING
         ####

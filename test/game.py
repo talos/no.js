@@ -2,11 +2,19 @@
 Test game.py
 """
 
+import sys
+if sys.version.find('2.7') == 0:
+    import unittest
+elif sys.version.find('2.6') == 0:
+    import unittest2 as unittest
+else:
+    print "Python %s not tested with opengold.  Use 2.6 or 2.7." % sys.version
+import time
+
 import redis
 import opengold.game as game
 #from random import choice
-import unittest
-import time
+from threading import Thread
 
 class TestGame(unittest.TestCase):
 
@@ -22,8 +30,8 @@ class TestGame(unittest.TestCase):
         self.assertTrue(game.join(self.r, 'game', 'hermit'))
         self.assertTrue(game.confirm(self.r, 'game', 'hermit'))
         info = game.get_info(self.r, 'game')
-        self.assertTrue('status' in info)
-        self.assertIsNone(game.get_info(self.r, 'game')['status']['round'])
+        self.assertIn('status', info)
+        self.assertEquals(0, game.get_info(self.r, 'game')['status']['round'])
 
     def test_move_before_start(self):
         self.assertTrue(game.join(self.r, 'game', 'foo'))
@@ -43,12 +51,13 @@ class TestGame(unittest.TestCase):
         self.assertTrue(game.confirm(self.r, 'game', 'beta'))
 
         info = game.get_info(self.r, 'game')
-        self.assertFalse('chat' in info)
-        self.assertFalse('you' in info)
-        self.assertTrue('status' in info)
-        self.assertTrue('update' in info)
-        self.assertTrue('timestamp' in info)
+        self.assertNotIn('chat', info)
+        self.assertNotIn('you', info)
+        self.assertIn('status', info)
+        self.assertIn('update', info)
+        self.assertIn('id', info)
         self.assertEquals(5, len(info['update']))
+        self.assertEquals(5, info['id'])
 
         self.assertEquals({'waiting': ['gaga'],
                            'confirmed': ['alpha', 'beta'],
@@ -56,10 +65,10 @@ class TestGame(unittest.TestCase):
                            'moved': [],
                            'table': [],
                            'captured': [],
-                           'pot': None,
-                           'round': None,
+                           'pot': 0,
+                           'round': 0,
                            'artifacts.destroyed': [],
-                           'artifacts.seen.count': None,
+                           'artifacts.seen.count': 0,
                            'artifacts.in.play': []},
                           info['status'])
 
@@ -78,19 +87,22 @@ class TestGame(unittest.TestCase):
         time.sleep(0.1)
 
         info = game.get_info(self.r, 'game')
-        self.assertTrue('chat' in info)
-        self.assertTrue('status' in info)
-        self.assertTrue('update' in info)
-        self.assertTrue('timestamp' in info)
+        self.assertIn('id', info)
+        self.assertIn('chat', info)
+        self.assertIn('status', info)
+        self.assertIn('update', info)
 
         chats = info['chat']
         self.assertEquals(3, len(chats))
-        self.assertEquals('hero', chats[0]['speaker'])
-        self.assertEquals('what up gals', chats[0]['message'])
-        self.assertEquals('betty', chats[1]['speaker'])
-        self.assertEquals("who's that dude?", chats[1]['message'])
-        self.assertEquals('martha', chats[2]['speaker'])
-        self.assertEquals('no clue', chats[2]['message'])
+        self.assertDictContainsSubset({'speaker': 'hero',
+                                       'message': 'what up gals',
+                                       'id': 4}, chats[0])
+        self.assertDictContainsSubset({'speaker': 'betty',
+                                       'message': "who's that dude?",
+                                       'id': 5}, chats[1])
+        self.assertDictContainsSubset({'speaker': 'martha',
+                                       'message': 'no clue',
+                                       'id': 6}, chats[2])
 
     def test_confirms_only_once(self):
         self.assertTrue(game.join(self.r, 'sesame street', 'george clinton'))
@@ -103,7 +115,7 @@ class TestGame(unittest.TestCase):
         self.assertTrue(game.join(self.r, 'sesame street', 'george clinton'))
 
         george_info = game.get_info(self.r, 'sesame street', 'george clinton')
-        self.assertTrue('you' in george_info)
+        self.assertIn('you', george_info)
         you = george_info['you']
         self.assertEquals('george clinton', you['player'])
         self.assertEquals(0, you['loot'])
@@ -119,39 +131,109 @@ class TestGame(unittest.TestCase):
 
     def test_valid_move(self):
         self.assertTrue(game.join(self.r, 'game', 'foo'))
+        time.sleep(0.01)
         self.assertTrue(game.join(self.r, 'game', 'bar'))
+        time.sleep(0.01)
         self.assertTrue(game.confirm(self.r, 'game', 'foo'))
+        time.sleep(0.01)
         self.assertTrue(game.confirm(self.r, 'game', 'bar'))
+        time.sleep(0.01)
         self.assertTrue(game.move(self.r, 'game', 'foo', 'lando'))
 
-    # def test_partial_completion(self):
-    #     g = Game()
-    #     g.add_player('socrates')
-    #     g.add_player('aristotle')
-    #     g.start('socrates')
-    #     g.start('aristotle')
-    #     g.submit('socrates', 'han')
-    #     status = g.get_status()
-    #     self.assertEquals(1, len(status.pop('table')))
-    #     self.assertEquals(1, len(status.pop('artifacts')))
-    #     self.assertIsNotNone(status.pop('pot'))
+        info = game.get_info(self.r, 'game')
+        self.assertIn('status', info)
+        self.assertIn('id', info)
+        self.assertIn(info['id'], [8, 9])
+        self.assertNotIn('you', info)
 
-    #     self.assertEquals({
-    #             'type'  : 'in_progress',
-    #             'round' : 1,
-    #             'players': [
-    #                 {'name': 'socrates', 'move': 'decided'},
-    #                 {'name': 'aristotle', 'move': 'undecided'}],
-    #             'captured' : []
-    #             }, status)
+        status = info['status']
+        self.assertEquals(1, len(status.pop('table')))
+        self.assertEquals(1, len(status.pop('artifacts.in.play')))
+        self.assertLessEqual(status.pop('artifacts.seen.count'), 1)
+        self.assertEquals({
+                'waiting': [],
+                'confirmed': ['bar'],
+                'camp': [],
+                'moved': ['foo'],
+                'pot': 0,
+                'round': 1,
+                'captured': [],
+                'artifacts.destroyed': [] }, status)
 
-    # def test_one_deal(self):
-    #     g = Game()
-    #     g.add_player('socrates')
-    #     g.add_player('aristotle')
-    #     g.start('socrates')
-    #     g.start('aristotle')
-    #     g.submit('socrates', 'han')
+        self.assertIn('update', info)
+        updates = info['update']
+        self.assertIn(len(updates), [8, 9]) # Extra notification if card was artifact
+        self.assertDictContainsSubset({'joined': 'foo',
+                                       'id': 1 }, updates[0])
+        self.assertDictContainsSubset({'joined': 'bar',
+                                       'id': 2 }, updates[1])
+        self.assertDictContainsSubset({'confirmed': 'foo',
+                                       'id': 3 }, updates[2])
+        self.assertDictContainsSubset({'confirmed': 'bar',
+                                       'id': 4 }, updates[3])
+        self.assertDictContainsSubset({'round': 1,
+                                       'id': 5 }, updates[4])
+        self.assertEquals(6, updates[5]['id'])
+        self.assertIn('artifacts.in.play', updates[5])
+        self.assertIsInstance(updates[5]['artifacts.in.play'], str)
+        self.assertEquals(7, updates[6]['id'])
+        self.assertIn('card', updates[6])
+        self.assertIsInstance(updates[6]['card'], str)
+        # Extra notification if the card happened to have been an artifact
+        if len(updates) == 9:
+            self.assertDictContainsSubset({'artifacts.seen.count': 1,
+                                           'id': 8}, updates[7])
+        self.assertDictContainsSubset({'moved': 'foo'}, updates.pop())
+
+        foo = game.get_info(self.r, 'game', 'foo')
+        self.assertIn('you', foo)
+        self.assertEquals({
+                'player': 'foo',
+                'moved': 'lando',
+                'loot' : 0,
+                'artifacts.captured': [] }, foo['you'])
+
+        bar = game.get_info(self.r, 'game', 'bar')
+        self.assertIn('you', bar)
+
+        self.assertEquals({
+                'player': 'bar',
+                'moved': 'confirmed',
+                'loot': 0,
+                'artifacts.captured': [] }, bar['you'])
+
+    def test_blocking_info(self):
+        t = Thread(target=game.get_info, args=[self.r, 'game'])
+        self.assertTrue(t.is_alive())
+        time.sleep(0.5)
+        self.assertTrue(t.is_alive())
+        self.assertTrue(game.join(self.r, 'game', 'some dude'))
+        self.assertFalse(t.is_alive())
+
+    def test_blocking_info_via_id(self):
+        self.assertTrue(game.join(self.r, 'game', 'thing one'))
+        t_all_info = Thread(target=game.get_info, args=(self.r, 'game',))
+        self.assertFalse(t_all_info.is_alive())
+
+        info = game.get_info(self.r, 'game')
+        self.assertIn('id', info)
+        last_id = info['id']
+
+        t_partial_info = Thread(target=game.get_info,
+                                args=(self.r, 'game',),
+                                kwargs={'start_id': last_id+1})
+        self.assertTrue(t_partial_info.is_alive())
+        time.sleep(0.5)
+        self.assertTrue(t_partial_info.is_alive())
+        self.assertTrue(game.join(self.r, 'game', 'some dude'))
+        self.assertFalse(t_partial_info.is_alive())
+
+    # def test_full_deal(self):
+    #     self.assertTrue(game.join(self.r, 'game', 'socrates'))
+    #     self.assertTrue(game.join(self.r, 'game', 'aristotle'))
+    #     self.assertTrue(game.confirm(self.r, 'game', 'aristotle'))
+    #     self.assertTrue(game.confirm(self.r, 'game', 'socrates'))
+    #     self.assertTrue(game.move(self.r, 'game', 'foo', 'lando'))
     #     g.submit('aristotle', 'lando')
     #     status = g.get_status()
 
