@@ -1,35 +1,26 @@
 from itertools import product
-from random import shuffle
+from collections import namedtuple
 
-TREASURES = [str(i) for i in [1,2,3,4,5,5,7,7,9,11,11,13,14,15,17]]
-HAZARDS = ['bitches', 'spiders', 'snakes', 'fire', 'bricks']
-ARTIFACTS = ['zefrim cockring', 'shrek', 'tube', 'nazi', 'gingerbread man']
+Treasure = namedtuple('treasure', ['name', 'value'])
+Hazard = namedtuple('hazard', 'name')
+Artifact = namedtuple('artifact', 'name')
 
-def card_type(card):
-    """
-    Get the type of a card.  Either 'treasure', 'hazard', or 'artifact'.
-    """
-    if card in TREASURES:
-        return 'treasure'
-    elif card in HAZARDS:
-        return 'hazard'
-    elif card in ARTIFACTS:
-        return 'artifact'
-    else:
-        raise ValueError('Unknown card type %s' % card)
+_TREASURES = [Treasure(name=str(value), value=value)
+             for value in [1,2,3,4,5,5,7,7,9,11,11,13,14,15,17]]
+_HAZARDS = [Hazard(name)
+           for name, i in product(['bitches', 'spiders', 'snakes', 'fire', 'bricks'],
+                                  xrange(3))]
+_ARTIFACTS = [Artifact(name)
+             for name in ['zefrim cockring', 'shrek', 'tube', 'nazi', 'gingerbread man']]
 
-def generate_deck():
-    """
-    Generate the initial deck as a list.  It has no artifacts, and is
-    not shuffled.  You must remember to pick random index items from it.
-    """
-    return TREASURES + [name for name, i in product(HAZARDS, xrange(3))]
+_DECK = _TREASURES + _HAZARDS + _ARTIFACTS
 
-def generate_artifacts():
+TREASURES = range(0, len(_TREASURES))
+HAZARDS = range(len(_TREASURES), len(_TREASURES) + len(_HAZARDS))
+ARTIFACTS = range(len(_TREASURES) + len(_HAZARDS), len(_DECK))
+
+def get_card(card_idx):
     """
-    Generate artifacts that must be added to the deck as a list. It is
-    already shuffled.
+    Get a card object by index.
     """
-    artifacts = ARTIFACTS
-    shuffle(artifacts)
-    return artifacts
+    return _DECK[int(card_idx)]
