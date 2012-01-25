@@ -45,28 +45,16 @@ class GameHandler(Jinja2Rendering):
         return self.render_template('app.html')
 
 
-class StatusHandler(WebMessageHandler, PlayerMixin):
+class InfoHandler(WebMessageHandler, PlayerMixin):
 
-    def get(self, game_name):
+    def get(self, game_name, start_id):
         """
-        Get the status of a game.
+        Get information about happenings in game since start_id.  Will
+        block until something happens after start_id.
         """
-        status = game.get_status(self.db_conn, game_name, self.get_player(game_name))
-        self.set_body(status) # TODO: rendering!
+        info = game.get_info(self.db_conn, game_name, self.get_player(game_name), start_id)
+        self.set_body(info) # TODO: rendering!
         return self.render()
-
-
-class PollHandler(WebMessageHandler):
-
-    def post(self, game):
-        """
-        Poll for updates to game.  Returns chats and statuses.  Blocks
-        until something comes down.
-        """
-        subscription = game.subscription(self.db_conn, game, self.get_player(game))
-        self.set_body(json.dumps(subscription.next()))
-        return self.render()
-
 
 class ChatHandler(WebMessageHandler):
 
@@ -151,11 +139,11 @@ config = {
     'mongrel2_pair': ('ipc://127.0.0.1:9999', 'ipc://127.0.0.1:9998'),
     'handler_tuples': [(r'^/$', IndexHandler),
                        (r'^/(?P<game_name>[^/]+)$', GameHandler),
-                       (r'^/(?P<game_name>[^/]+)/status$', StatusHandler),
+                       (r'^/(?P<game_name>[^/]+)/status/(?P<start_id>\d+)$', InfoHandler),
                        (r'^/(?P<game_name>[^/]+)/join$', JoinHandler),
                        (r'^/(?P<game_name>[^/]+)/confirm$', ConfirmHandler),
-                       (r'^/(?P<game_name>[^/]+)/move$', MoveHandler),
-                       (r'^/(?P<game_name>[^/]+)/poll$', PollHandler)],
+                       (r'^/(?P<game_name>[^/]+)/move$', MoveHandler)],
+                       #(r'^/(?P<game_name>[^/]+)/poll$', PollHandler)],
     'cookie_secret': str(uuid.uuid4()),  # this will kill all sessions/games if the server crashes!
     'db_conn': redis.StrictRedis(),
     'template_loader': load_jinja2_env('templates')
