@@ -203,29 +203,40 @@ class TestGame(unittest.TestCase):
                 'artifacts.captured': [] }, bar['you'])
 
     def test_blocking_info(self):
-        t = Thread(target=game.get_info, args=[self.r, 'game'])
+        t = Thread(target=game.get_info, args=[self.r, 'blocked'])
+        t.start()
         self.assertTrue(t.is_alive())
         time.sleep(0.5)
+
         self.assertTrue(t.is_alive())
-        self.assertTrue(game.join(self.r, 'game', 'some dude'))
+
+        self.assertTrue(game.join(self.r, 'blocked', 'some dude'))
+        t.join()
         self.assertFalse(t.is_alive())
 
     def test_blocking_info_via_id(self):
         self.assertTrue(game.join(self.r, 'game', 'thing one'))
         t_all_info = Thread(target=game.get_info, args=(self.r, 'game',))
+        t_all_info.start()
+        t_all_info.join()
         self.assertFalse(t_all_info.is_alive())
 
         info = game.get_info(self.r, 'game')
         self.assertIn('id', info)
         last_id = info['id']
+        self.assertEquals(1, last_id)
 
         t_partial_info = Thread(target=game.get_info,
                                 args=(self.r, 'game',),
-                                kwargs={'start_id': last_id+1})
+                                kwargs={'start_id': last_id})
+
+        t_partial_info.start()
         self.assertTrue(t_partial_info.is_alive())
         time.sleep(0.5)
         self.assertTrue(t_partial_info.is_alive())
+
         self.assertTrue(game.join(self.r, 'game', 'some dude'))
+        t_partial_info.join()
         self.assertFalse(t_partial_info.is_alive())
 
     # def test_full_deal(self):

@@ -143,15 +143,32 @@ def _deal_card(r, k):
         artifacts_seen_count = r.incr(path(k, ARTIFACTS_SEEN_COUNT))
         _update(r, k, { ARTIFACTS_SEEN_COUNT: int(artifacts_seen_count) })
 
+def get_info(r, k, player=None, start_id=0):
+    """
+    Calls generate_info if there has been activity since start_id,
+    which defaults to 0.  If there has not been activity, blocks until
+    there is.
+    """
+    pubsub = r.pubsub()
+    pubsub.subscribe(k)
+    listener = pubsub.listen()
+
+    while True:
+        if start_id >= int(r.get(path(k, INFO_ID)) or 0):
+            listener.next() # wait for an update
+            continue
+        else:
+            break
+
+    return generate_info(r, k, player, start_id)
+
 @synchronized
-def get_info(r, k, player=None, start_id=0 ):
+def generate_info(r, k, player=None, start_id=0):
     """
     Check for status updates and chats since the specified start_id,
     inclusive.  If there were any status updates since the id, the
     current status will be generated as well.  The presence of chats
-    will not trigger the generation of a status object.  If there have
-    been no chats or status updates since the timestamp, this will
-    block until something happens.
+    will not trigger the generation of a status object.
 
     If start_id is unspecified, all messages will be pulled.  If
     player is unspecified, no player-specific data will be delivered.
@@ -161,18 +178,9 @@ def get_info(r, k, player=None, start_id=0 ):
     update), and a single player object (if a player was specified and
     there was an update).
     """
-
-    pubsub = r.pubsub()
-    pubsub.subscribe(k)
-
-    while True:
-        all_info = [ast.literal_eval(entry) for entry in r.lrange(path(k, INFO), start_id, -1)]
-        if len(all_info) == 0:
-            pubsub.listen().next() # wait for an update
-        else:
-            chats = [i[CHAT] for i in filter(lambda i: CHAT in i, all_info)]
-            updates = [i[UPDATE] for i in filter(lambda i: UPDATE in i, all_info)]
-            break
+    all_info = [ast.literal_eval(entry) for entry in r.lrange(path(k, INFO), start_id, -1)]
+    chats = [i[CHAT] for i in filter(lambda i: CHAT in i, all_info)]
+    updates = [i[UPDATE] for i in filter(lambda i: UPDATE in i, all_info)]
 
     info = { INFO_ID: int(r.get(path(k, INFO_ID)) or 0) }
     if len(chats) > 0:
@@ -247,7 +255,6 @@ def confirm(r, k, player):
 
     num_players = r.scard(path(k, ALL_PLAYERS))
 
-    # This is safe because a successful move from WAITING to CONFIRMED preceded it.
     if(r.scard(path(k, WAITING)) == 0 and
        r.scard(path(k, CONFIRMED)) == num_players and
        num_players > 1):
