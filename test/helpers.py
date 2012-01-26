@@ -1,8 +1,64 @@
 import subprocess
 import redis
 import time
-import unittest
-from opengold.deck import _DECK
+import logging
+import sys
+
+if sys.version.find('2.7') == 0:
+    import unittest
+elif sys.version.find('2.6') == 0:
+    import unittest2 as unittest
+else:
+    print "Python %s not tested with opengold.  Use 2.6 or 2.7." % sys.version
+
+#from threading import Thread
+
+try:
+    import opengold
+except:
+    ## if opengold is not installed, look for it manually.
+    sys.path.extend(['../', '.'])
+
+from opengold import deck, game
+
+logging.basicConfig()
+LOG = logging.getLogger('opengold')
+
+# def logged_popen(*args, **kwargs):
+#     """
+#     Call this instead of subprocess.Popen to wrap stdout/stdin in
+#     a logger.  Returns the same object.
+#     """
+#     kwargs = dict(kwargs)
+#     kwargs['stdout'] = subprocess.PIPE
+#     kwargs['stderr'] = subprocess.PIPE
+#     s = subprocess.Popen(*args, **kwargs)
+#     Thread(target=logger_run, args=(s, LOG, )).start()
+#     return s
+
+# def logger_run(subprocess, log):
+#     """
+#     Print warning to logger for all stdout.
+#     """
+#     stdout = subprocess.stdout
+#     stderr = subprocess.stderr
+#     while True:
+#         try:
+#             log.warn(stdout.next())
+#         except StopIteration:
+#             pass
+#         try:
+#             log.error(stderr.next())
+#         except StopIteration:
+#             pass
+
+#         if not subprocess.poll():
+#             time.sleep(.1)
+#             continue
+#         else:
+#             break
+
+#     log.warn('subprocess died')
 
 class NoCardException(Exception):
     def __init__(self, card, card_ids):
@@ -21,7 +77,7 @@ def fake_deal(r, mocked_key, card_name):
     fake_deal(r, 'game:deck', 'tube')
     fake_deal(r, 'game:deck', 'fire')
     """
-    card_ids = [i for i in range(len(_DECK)) if _DECK[i].name == str(card_name)]
+    card_ids = [i for i in range(len(deck._DECK)) if deck._DECK[i].name == str(card_name)]
     orig_pop = r.spop
 
     def mock_pop(called_key):
@@ -53,11 +109,18 @@ class TestOpengoldServer(unittest.TestCase):
         """
         Start up opengold & mongrel.
         """
-        cls.server = subprocess.Popen('m2sh start -host localhost', shell=True)
-        cls.app = subprocess.Popen('python opengold/server.py %s' % DB_NAME, shell=True)
-        print "Waiting for server to start"
+        cls.server = subprocess.Popen('m2sh start -host localhost',
+                                  shell=True,
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE )
+        cls.app = subprocess.Popen('python opengold/server.py %s' % DB_NAME,
+                               shell=True,
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE )
+
+        LOG.info("Waiting for server to start")
         time.sleep(2)
-        print "Finished waiting for server to start"
+        LOG.info("Finished waiting for server to start")
 
     @classmethod
     def tearDownClass(cls):

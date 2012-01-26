@@ -4,7 +4,6 @@ from redis import WatchError
 import ast
 import time
 
-MAX_ROUNDS = 5
 ARTIFACT_VALUES = [5, 5, 10, 10, 15] # corresponding to which artifact this is
 
 ###
@@ -96,6 +95,7 @@ def synchronized(func):
             except WatchError:
                 continue
             finally:
+                r.delete(path(k, LOCK)) # when it's not Can, Deadlock is bad
                 pipe.reset()
 
     return wrapped
@@ -110,12 +110,13 @@ def chat(r, k, speaker, message, superuser=False):
     Returns True if the message was submitted, False otherwise.
     """
     if r.sismember(path(k, PLAYERS), speaker) or superuser:
+        info_id = r.incr(path(k, INFO_ID))
         r.rpush(path(k, INFO), { CHAT:
                { SPEAKER: speaker,
                  MESSAGE: message,
-                 INFO_ID: r.incr(path(k, INFO_ID)),
+                 INFO_ID: info_id,
                  TIMESTAMP: timestamp() }})
-        r.publish(k, CHAT)
+        r.publish(k, info_id)
         return True
     else:
         return False
@@ -132,10 +133,11 @@ def _update(r, k, update):
     Broadcast an update.  This should not be called externally.  The
     update must be a dict.
     """
+    info_id = r.incr(path(k, INFO_ID))
     update[TIMESTAMP] = timestamp()
-    update[INFO_ID] = r.incr(path(k, INFO_ID))
+    update[INFO_ID] = info_id
     r.rpush(path(k, INFO), { UPDATE: update })
-    r.publish(k, UPDATE)
+    r.publish(k, info_id)
 
 def _deal_card(r, k):
     """
@@ -147,7 +149,9 @@ def _deal_card(r, k):
 
     The dealt card, not its index, is returned.
     """
+
     card_idx = r.spop(path(k, DECK))
+
     r.rpush(path(k, TABLE), card_idx)
     card = get_card(card_idx)
     _update(r, k, { CARD : card.name })
@@ -165,34 +169,29 @@ def list_names(r):
     """
     return sorted(list(r.smembers(GAMES)))
 
-def get_info(r, k, player=None, start_id=0, signal={}):
+def info(r, k, player=None, start_id=0):
     """
-    Calls generate_info if there has been activity since start_id,
-    which defaults to 0.  If there has not been activity, blocks until
-    there is.
+    Returns a generator that will return info objects newer than the
+    last one it generated, starting with start_id.
 
-    Returns None immediately if a game does not exist.
-
-    If signal is passed, making 'stop' in signal Truthy will terminate
-    this call.
+    The generator will return None once if there is nothing newer or
+    the game doesn't exist.  A subsequent call to .next() will block
+    until something newer becomes available.
     """
-    if not r.sismember(GAMES, k):
-        return None
-
     pubsub = r.pubsub()
     pubsub.subscribe(k)
+
     listener = pubsub.listen()
 
     while True:
         if start_id >= int(r.get(path(k, INFO_ID)) or 0):
-            listener.next() # wait for an update
-            continue
-        elif 'stop' in signal:
-            break
+            yield None
+            listener.next() # block waiting for an update to
+                            # generate something newer
         else:
-            break
-
-    return generate_info(r, k, player, start_id)
+            info = generate_info(r, k, player, start_id)
+            start_id = info[INFO_ID]
+            yield info
 
 @synchronized
 def generate_info(r, k, player=None, start_id=0):
@@ -252,8 +251,13 @@ def join(r, k, player):
     Garbage in, garbage out -- make sure to protect against XSS
     (player name) outside of this.
     """
-    if r.exists(path(k, ROUND)) is False:
+    if not r.sismember(GAMES, k):
         r.sadd(GAMES, k)
+        r.sadd(path(k, DECK), *TREASURES)
+        r.sadd(path(k, DECK), *HAZARDS)
+        r.sadd(path(k, ARTIFACTS_UNSEEN), *ARTIFACTS)
+
+    if r.exists(path(k, ROUND)) is False:
         if r.sadd(path(k, PLAYERS), player) == 1:
             r.hmset(path(k, PLAYERS, player), { NAME: player,
                                                 LOCATION: L_CAMP })
@@ -271,6 +275,9 @@ def enter_temple(r, k, player):
     This will start the game when everyone is in the temple, but a
     single player can't move the game from round 0 to round 1.
     """
+    if not r.exists(path(k, ARTIFACTS_UNSEEN)): # the game is over
+        return False
+
     if (r.hget(path(k, PLAYERS, player), LOCATION) == L_CAMP and
         not r.exists(path(k, TABLE))):
         r.hset(path(k, PLAYERS, player), LOCATION, L_TEMPLE)
@@ -282,17 +289,11 @@ def enter_temple(r, k, player):
 
     if(all(map(lambda p: p[LOCATION] == L_TEMPLE, players)) and
        len(players) > 1):
-        # game hasn't started yet
-        if not r.exists(path(k, ROUND)):
-            r.sadd(path(k, DECK), *TREASURES)
-            r.sadd(path(k, DECK), *HAZARDS)
-            r.sadd(path(k, ARTIFACTS_UNSEEN), *ARTIFACTS)
-        else:
-            # push everything on the table and captured back into the deck
-            return_to_deck = r.lrange(path(k, TABLE), 0, -1) + r.lrange(path(k, CAPTURED), 0, -1)
-            if len(return_to_deck):
-                r.sadd(path(k, DECK), *return_to_deck)
-            r.delete(path(k, TABLE), path(k, DECK))
+        # push everything on the table and captured back into the deck
+        return_to_deck = r.lrange(path(k, TABLE), 0, -1) + r.lrange(path(k, CAPTURED), 0, -1)
+        if len(return_to_deck):
+            r.sadd(path(k, DECK), *return_to_deck)
+        r.delete(path(k, TABLE), path(k, CAPTURED))
 
         _round = r.incr(path(k, ROUND))
         new_artifact = r.spop(path(k, ARTIFACTS_UNSEEN))
@@ -322,15 +323,15 @@ def move(r, k, player, move):
         return False
 
     players = _get_players(r, k)
-    if all(map(lambda p: DECISION in p,
-               filter(lambda p: p[LOCATION] == L_TEMPLE, players))):
+    in_temple = filter(lambda p: p[LOCATION] == L_TEMPLE, players)
+    if all(map(lambda p: DECISION in p, in_temple)):
 
         ####
         # LANDO LOVES LOOT
         ####
-        landos = sorted(map(lambda p: p[NAME], filter(lambda p: p[DECISION] == D_LANDO, players)))
+        landos = sorted(map(lambda p: p[NAME], filter(lambda p: p[DECISION] == D_LANDO, in_temple)))
         if len(landos) > 0:
-            loot = r.get(path(k, POT)) or 0
+            loot = int(r.get(path(k, POT)) or 0)
             for card_idx in r.lrange(path(k, TABLE), 0, -1):
                 card = get_card(card_idx)
                 if isinstance(card, Treasure):
@@ -375,7 +376,7 @@ def move(r, k, player, move):
         ####
         # HANS VENTURE FORTH
         ####
-        hans = sorted(map(lambda p: p[NAME], filter(lambda p: p[DECISION] == D_HAN, players)))
+        hans = sorted(map(lambda p: p[NAME], filter(lambda p: p[DECISION] == D_HAN, in_temple)))
         if len(hans) > 0:
             card = _deal_card(r, k)
 

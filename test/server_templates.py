@@ -5,11 +5,9 @@ Test server.py with HTML requests.  Starts server and mongrel at start
 of test class.
 """
 
-import unittest
 import requests
-import urllib2
 
-from helpers import TestOpengoldServer, HOST
+from helpers import TestOpengoldServer, HOST, unittest
 
 class TestServerTemplates(TestOpengoldServer):
     """

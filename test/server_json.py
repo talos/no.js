@@ -5,12 +5,11 @@ Test server.py with JSON requests.  Starts server and mongrel at start
 of test class.
 """
 
-import unittest
 import requests
 import json
 import urllib2
 
-from helpers import TestOpengoldServer, HOST
+from helpers import TestOpengoldServer, HOST, unittest
 
 JSON_HEADER = {'content-type': 'application/json'}
 
