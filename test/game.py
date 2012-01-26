@@ -30,6 +30,13 @@ class TestGame(unittest.TestCase):
         self.signal['stop'] = True
         pass
 
+    def test_multiple_game_names(self):
+        game.join(self.r, 'the hills', 'foo')
+        game.join(self.r, 'the valleys', 'bar')
+
+        self.assertEquals(['the hills', 'the valleys'],
+                          game.list_names(self.r))
+
     def test_needs_multiple_players(self):
         self.assertTrue(game.join(self.r, 'game', 'hermit'))
         self.assertTrue(game.enter_temple(self.r, 'game', 'hermit'))

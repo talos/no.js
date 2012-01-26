@@ -3,16 +3,16 @@
 import uuid
 import redis
 import json
+import sys
 
 import game
+from templating import load_mustache_env, MustacheRendering
 
 from brubeck.request_handling import Brubeck, WebMessageHandler
-from brubeck.templating import load_jinja2_env, Jinja2Rendering
-
 
 class PlayerMixin():
     """
-    This mixin provides a player method.
+    This mixin provides a get_player() method.
     """
 
     def get_player(self, game_name):
@@ -23,46 +23,64 @@ class PlayerMixin():
         return self.get_cookie(game_name, None, self.application.cookie_secret)
 
 
-class IndexHandler(Jinja2Rendering):
+# class IndexHandler(Jinja2Rendering):
+
+#     def get(self):
+#         """
+#         List all games currently available.
+#         """
+#         names = game.list_names(self.db_conn)
+#         self.set_body(json.dumps(names))
+
+
+        # if self.get_argument('game'):
+        #     return self.redirect(self.get_argument('game'))
+        # else:
+        #     context = {
+        #         'games': [{ 'name': name,
+        #                     # todo this will lock all games!
+        #                     'status': game.get_status(self.db_conn, name) }
+        #                   for name in game.list_names(self.db_conn)]
+        #         }
+        #     return self.render_template('index.html', **context)
+
+class IndexHandler(MustacheRendering):
 
     def get(self):
         """
         List all games currently available.
         """
-        if self.get_argument('game'):
-            return self.redirect(self.get_argument('game'))
+        context = {'names': game.list_names(self.db_conn)}
+        if self.message.content_type == 'application/json':
+            self.headers['Content-Type'] = 'application/json'
+            self.set_body(json.dumps(context))
+            return self.render()
         else:
-            context = {
-                'games': [{ 'name': name,
-                            'status': self.db_conn.get_game(name).get_status() }
-                          for name in self.db_conn.get_all_names()]
-                }
             return self.render_template('index.html', **context)
 
-class GameHandler(Jinja2Rendering):
+class GameHandler(MustacheRendering, PlayerMixin):
 
-    def get(self):
-        return self.render_template('app.html')
-
-
-class InfoHandler(WebMessageHandler, PlayerMixin):
-
-    def get(self, game_name, start_id):
+    def get(self, game_name):
         """
-        Get information about happenings in game since start_id.  Will
-        block until something happens after start_id.
+        Get information about happenings in game since id.  Will
+        block until something happens after id.  ID defaults to 0.
         """
-        info = game.get_info(self.db_conn, game_name, self.get_player(game_name), start_id)
-        self.set_body(info) # TODO: rendering!
-        return self.render()
+        start_id = self.get_argument('id') or 0
+        context = game.get_info(self.db_conn, game_name, self.get_player(game_name), start_id)
+        if self.message.content_type == 'application/json':
+            self.headers['Content-Type'] = 'application/json'
+            self.set_body(json.dumps(context))
+            return self.render()
+        else:
+            return self.render_template('app.html', **context)
 
-class ChatHandler(WebMessageHandler):
+class ChatHandler(WebMessageHandler, PlayerMixin):
 
     def post(self, game_name):
         """
         Message other players in the game.
         """
-        message = self.get_param('message')
+        message = self.get_argument('message')
         player = self.get_player(game_name)
         if message and player:
             game.chat(self.db_conn, game_name, player, message)
@@ -78,22 +96,6 @@ class ChatHandler(WebMessageHandler):
         return self.render()
 
 
-class ConfirmHandler(WebMessageHandler, PlayerMixin):
-
-    def post(self, game_name):
-        """
-        Vote to advance to the next round.
-        """
-        player = self.get_player(game_name)
-        if player:
-            game.confirm(self.db_conn, game_name, player)
-            self.set_status(200)
-            #self.redirect('/%s' % kwargs['game_name'])
-        else:
-            self.set_status(400, status_msg="You are not in this game")
-
-        return self.render()
-
 class JoinHandler(WebMessageHandler, PlayerMixin):
 
     def post(self, game_name):
@@ -101,7 +103,7 @@ class JoinHandler(WebMessageHandler, PlayerMixin):
         Try to join the game with the post-specified player name `player`.
         If it succeeds, feed the user a cookie!
         """
-        if self.get_player(game_name):  # they are already logged in
+        if self.get_player(game_name):  # player already in this game
             self.set_status(400, status_msg="You are already in this game")
         elif self.get_argument('player'):
             player_name = self.get_argument('player')
@@ -113,6 +115,23 @@ class JoinHandler(WebMessageHandler, PlayerMixin):
                 self.set_status(400, status_msg="Could not add %s to game" % player_name)
         else:
             self.set_status(400, status_msg="You must specify a name to join.")
+
+        return self.render()
+
+
+class EnterTempleHandler(WebMessageHandler, PlayerMixin):
+
+    def post(self, game_name):
+        """
+        Vote to enter temple/advance to next round.
+        """
+        player = self.get_player(game_name)
+        if player:
+            game.enter_temple(self.db_conn, game_name, player)
+            self.set_status(200)
+            #self.redirect('/%s' % kwargs['game_name'])
+        else:
+            self.set_status(400, status_msg="You are not in this game")
 
         return self.render()
 
@@ -139,14 +158,13 @@ config = {
     'mongrel2_pair': ('ipc://127.0.0.1:9999', 'ipc://127.0.0.1:9998'),
     'handler_tuples': [(r'^/$', IndexHandler),
                        (r'^/(?P<game_name>[^/]+)$', GameHandler),
-                       (r'^/(?P<game_name>[^/]+)/status/(?P<start_id>\d+)$', InfoHandler),
                        (r'^/(?P<game_name>[^/]+)/join$', JoinHandler),
-                       (r'^/(?P<game_name>[^/]+)/confirm$', ConfirmHandler),
+                       (r'^/(?P<game_name>[^/]+)/enter$', EnterTempleHandler),
                        (r'^/(?P<game_name>[^/]+)/move$', MoveHandler)],
                        #(r'^/(?P<game_name>[^/]+)/poll$', PollHandler)],
     'cookie_secret': str(uuid.uuid4()),  # this will kill all sessions/games if the server crashes!
-    'db_conn': redis.StrictRedis(),
-    'template_loader': load_jinja2_env('templates')
+    'db_conn': redis.StrictRedis(db=sys.argv[1] or 'opengold'),
+    'template_loader': load_mustache_env('templates')
 }
 
 

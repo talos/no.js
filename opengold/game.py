@@ -39,6 +39,8 @@ D_HAN = 'han'
 # Redis keys
 #
 ###
+GAMES = 'games' # set
+
 INFO_ID = 'id' # integer
 INFO = 'info' # list
 
@@ -156,6 +158,12 @@ def _deal_card(r, k):
 
     return card
 
+def list_names(r):
+    """
+    List all game names.
+    """
+    return list(r.smembers(GAMES))
+
 def get_info(r, k, player=None, start_id=0, signal={}):
     """
     Calls generate_info if there has been activity since start_id,
@@ -232,14 +240,15 @@ def generate_info(r, k, player=None, start_id=0):
 @synchronized
 def join(r, k, player):
     """
-    Add a player to the waiting room.  Returns True if they have
-    been added, or False otherwise.  Can only join this room if
-    the game is not yet started.
+    Add a player to the camp.  Returns True if they have been added,
+    or False otherwise.  Can only join the camp if the game has not
+    yet started.
 
     Garbage in, garbage out -- make sure to protect against XSS
     (player name) outside of this.
     """
     if r.exists(path(k, ROUND)) is False:
+        r.sadd(GAMES, k)
         if r.sadd(path(k, PLAYERS), player) == 1:
             r.hmset(path(k, PLAYERS, player), { NAME: player,
                                                 LOCATION: L_CAMP })
