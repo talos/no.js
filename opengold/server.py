@@ -78,7 +78,14 @@ class GameHandler(MustacheRendering, PlayerMixin):
         block until something happens after id.  ID defaults to 0.
         """
         start_id = self.get_argument('id') or 0
-        context = game.get_info(self.db_conn, game_name, self.get_player(game_name), start_id)
+        info = game.info(self.db_conn, game_name, self.get_player(game_name), start_id)
+        context = info.next()
+
+        # If a start ID was specified, then we are long-polling and
+        # should block if no info was returned.
+        if start_id > 0 and not context:
+            context = info.next()
+
         if not context:
             self.set_status(404)
             return self.render()
