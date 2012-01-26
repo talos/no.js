@@ -160,20 +160,25 @@ def _deal_card(r, k):
 
 def list_names(r):
     """
-    List all game names.
+    List all game names. GARBAGE IN GARBAGE OUT! Make sure to sanitize
+    output as appropriate.
     """
-    return list(r.smembers(GAMES))
+    return sorted(list(r.smembers(GAMES)))
 
 def get_info(r, k, player=None, start_id=0, signal={}):
     """
     Calls generate_info if there has been activity since start_id,
     which defaults to 0.  If there has not been activity, blocks until
-    there is.  This currently blocks on a nonexistent game until
-    something happens to it!
+    there is.
+
+    Returns None immediately if a game does not exist.
 
     If signal is passed, making 'stop' in signal Truthy will terminate
     this call.
     """
+    if not r.sismember(GAMES, k):
+        return None
+
     pubsub = r.pubsub()
     pubsub.subscribe(k)
     listener = pubsub.listen()

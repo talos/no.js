@@ -1,48 +1,24 @@
+# -*- coding: utf-8 -*-
+
 """
-Test server.py.  Restarts server & mongrel each time.
+Test server.py with JSON requests.  Starts server and mongrel at start
+of test class.
 """
 
 import unittest
-import subprocess
 import requests
-import redis
 import json
-import time
+import urllib2
 
-HOST = "http://localhost:6767"
-DB_NAME = 'TestServer'
+from helpers import TestOpengoldServer, HOST
+
 JSON_HEADER = {'content-type': 'application/json'}
 
-class TestServerJSON(unittest.TestCase):
+class TestServerJSON(TestOpengoldServer):
+
     """
     Test JSON methods on the server.  Does not hit the template side of things.
     """
-
-    @classmethod
-    def setUpClass(cls):
-        """Start up the server
-        """
-        cls.server = subprocess.Popen('m2sh start -host localhost', shell=True)
-        cls.app = subprocess.Popen('python opengold/server.py %s' % DB_NAME, shell=True)
-        print "Waiting for server to start"
-        time.sleep(2)
-        print "Finished waiting for server to start"
-
-    @classmethod
-    def tearDownClass(cls):
-        """
-        Shut down the server
-        """
-        cls.app.terminate()
-        cls.app.wait()
-        subprocess.Popen('m2sh stop -host localhost', shell=True)
-
-    def setUp(self):
-        """
-        Clean DB entirely between tests.
-        """
-        redis.StrictRedis(db=DB_NAME).flushdb()
-
     def test_join_game(self):
         """
         Jack and Jill join a hill...
@@ -86,6 +62,61 @@ class TestServerJSON(unittest.TestCase):
         s.post(HOST + '/somewhere/join', data={'player':'joseph'})
         self.assertEquals(400, s.post(HOST + '/somewhere/join',
                                       data={'player':'mary'}).status_code)
+
+    def test_join_multiple_games(self):
+        s = requests.session()
+
+        self.assertEquals(200, s.post(HOST + '/here/join', data={'player':'paul'}).status_code)
+        self.assertEquals(200, s.post(HOST + '/there/join', data={'player':'john'}).status_code)
+        self.assertEquals(200, s.post(HOST + '/and everywhere/join', data={'player':'ringo'}).status_code)
+
+    def test_game_list(self):
+        s = requests.session()
+
+        s.post(HOST + '/sexy sadie/join', data={'player':'john'})
+        s.post(HOST + '/blackbird/join', data={'player':'paul'})
+        s.post(HOST + '/yellow submarine/join', data={'player':'ringo'})
+
+        self.assertEquals({'names': ['blackbird', 'sexy sadie', 'yellow submarine']},
+                          json.loads(s.get(HOST + '/', headers=JSON_HEADER).content))
+
+    def test_xss(self):
+        """
+        Totally arbitrary text is allowed in titles.  Filtering is
+        done using .text() later on from the JSON object.
+        """
+        s = requests.session()
+
+        xss = "<script type='text/javascript'>document.write('bullshit')</script>"
+        xss_quoted = urllib2.quote(xss, '')
+
+        s.post(HOST + '/%s/join' % xss_quoted, data={'player':'bastard'})
+
+        self.assertEquals({'names': [xss]},
+                          json.loads(s.get(HOST + '/', headers=JSON_HEADER).content))
+
+    def test_unicode_game_name(self):
+        """
+        Totally arbitrary text is allowed in titles.  Filtering is
+        done using .text() later on from the JSON object.
+        """
+        s = requests.session()
+
+        s.post(HOST + u"/☃/join", data={'player':'snowman'})
+
+        self.assertEquals({'names': [u"☃"]},
+                          json.loads(s.get(HOST + '/', headers=JSON_HEADER).content))
+
+    def test_unicode_player_name(self):
+        """
+        Totally arbitrary text is allowed in titles.  Filtering is
+        done using .text() later on from the JSON object.
+        """
+        s = requests.session()
+
+        s.post(HOST + "/iceberg/join", data={'player':u"☃"})
+        resp = s.get(HOST + "/iceberg", headers=JSON_HEADER).content
+        self.assertEquals(u"☃", json.loads(resp)['you']['name'])
 
     # def test_new_game(self):
     #     self.assertEquals({

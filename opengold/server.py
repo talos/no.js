@@ -4,23 +4,34 @@ import uuid
 import redis
 import json
 import sys
+import urllib2
 
 import game
 from templating import load_mustache_env, MustacheRendering
 
 from brubeck.request_handling import Brubeck, WebMessageHandler
 
+
+def unquote_game_name(func):
+    """
+    This decorator takes the first argument and unquotes it with urllib2.
+    """
+    def wrapped(self, game_name, *args, **kwargs):
+        return func(self, urllib2.unquote(game_name), *args, **kwargs)
+    return wrapped
+
+
 class PlayerMixin():
     """
-    This mixin provides a get_player() method.
+    This mixin provides a get_player() method.  The passed game_name
+    should already be unquoted, as it will be re-quoted.
     """
-
     def get_player(self, game_name):
         """
         Get the player for the specified game_name, or None if the
-        user is not taking part.
+        user is not taking part.  game_name should not be quoted.
         """
-        return self.get_cookie(game_name, None, self.application.cookie_secret)
+        return self.get_cookie(urllib2.quote(game_name, ''), None, self.application.cookie_secret)
 
 
 # class IndexHandler(Jinja2Rendering):
@@ -56,10 +67,11 @@ class IndexHandler(MustacheRendering):
             self.set_body(json.dumps(context))
             return self.render()
         else:
-            return self.render_template('index.html', **context)
+            return self.render_template('app', **context)
 
 class GameHandler(MustacheRendering, PlayerMixin):
 
+    @unquote_game_name
     def get(self, game_name):
         """
         Get information about happenings in game since id.  Will
@@ -67,15 +79,20 @@ class GameHandler(MustacheRendering, PlayerMixin):
         """
         start_id = self.get_argument('id') or 0
         context = game.get_info(self.db_conn, game_name, self.get_player(game_name), start_id)
-        if self.message.content_type == 'application/json':
+        if not context:
+            self.set_status(404)
+            return self.render()
+        elif self.message.content_type == 'application/json':
             self.headers['Content-Type'] = 'application/json'
             self.set_body(json.dumps(context))
             return self.render()
         else:
-            return self.render_template('app.html', **context)
+            return self.render_template('app', **context)
+
 
 class ChatHandler(WebMessageHandler, PlayerMixin):
 
+    @unquote_game_name
     def post(self, game_name):
         """
         Message other players in the game.
@@ -98,6 +115,7 @@ class ChatHandler(WebMessageHandler, PlayerMixin):
 
 class JoinHandler(WebMessageHandler, PlayerMixin):
 
+    @unquote_game_name
     def post(self, game_name):
         """
         Try to join the game with the post-specified player name `player`.
@@ -108,7 +126,7 @@ class JoinHandler(WebMessageHandler, PlayerMixin):
         elif self.get_argument('player'):
             player_name = self.get_argument('player')
             if game.join(self.db_conn, game_name, player_name):
-                self.set_cookie(game_name, player_name, self.application.cookie_secret)
+                self.set_cookie(urllib2.quote(game_name, ''), player_name, self.application.cookie_secret)
                 self.set_status(200)
                 #self.redirect('/%s' % kwargs['game_name'])
             else:
@@ -121,6 +139,7 @@ class JoinHandler(WebMessageHandler, PlayerMixin):
 
 class EnterTempleHandler(WebMessageHandler, PlayerMixin):
 
+    @unquote_game_name
     def post(self, game_name):
         """
         Vote to enter temple/advance to next round.
@@ -138,6 +157,7 @@ class EnterTempleHandler(WebMessageHandler, PlayerMixin):
 
 class MoveHandler(WebMessageHandler, PlayerMixin):
 
+    @unquote_game_name
     def post(self, game_name):
         """
         Looks like we got a Lando!!
