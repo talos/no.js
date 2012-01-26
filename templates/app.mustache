@@ -1,19 +1,26 @@
 <html>
-<!-- require.js -->
-<script data-main="js/main" src="http://requirejs.org/docs/release/1.0.4/minified/require.js"  type="text/javascript"></script>
+  <!-- require.js -->
+  <script data-main="js/main" src="http://requirejs.org/docs/release/1.0.4/minified/require.js"  type="text/javascript"></script>
 
-<!-- CSS -->
-<link rel="stylesheet" type="text/css" href="css/default.css" />
-<body>
-  {{#names?}}
-  <div id="index">
-    {{#names}}
-      <div>{{.}}</div>
-    {{/names}}
-  </div>
-  {{/names?}}
-  {{^names}}
-  <div>No games currently available.</div>
-  {{/names}}
-</body>
+  <!-- CSS -->
+  <link rel="stylesheet" type="text/css" href="css/default.css" />
+  <body>
+    <div id="index">
+      {{#names}}
+        <div>{{.}}</div>
+      {{/names}}
+      {{^names}}
+      <div>No games currently available.</div>
+      {{/names}}
+    </div>
+
+    <div id="game">
+      {{#status}}
+        
+      {{/status}}
+      {{#you}}
+
+      {{/you}}
+    </div>
+  </body>
 </html>

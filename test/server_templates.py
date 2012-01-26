@@ -21,6 +21,17 @@ class TestServerTemplates(TestOpengoldServer):
         resp = s.get(HOST + '/')
         self.assertRegexpMatches(resp.content, "No games currently available")
 
+    def test_load_game_index_several_games(self):
+        s = requests.session()
+
+        s.post(HOST + '/piper at the gates of dawn/join', data={'player':'barrett'})
+        s.post(HOST + '/saucerful of secrets/join', data={'player':'gilmour'})
+        s.post(HOST + '/meddle/join', data={'player':'gilmour'})
+        resp = s.get(HOST + '/')
+        self.assertRegexpMatches(resp.content, "piper at the gates of dawn")
+        self.assertRegexpMatches(resp.content, "saucerful of secrets")
+        self.assertRegexpMatches(resp.content, "meddle")
+
     def test_load_nonexistent_game(self):
         s = requests.session()
         self.assertEquals(404, s.get(HOST + '/nada').status_code)
