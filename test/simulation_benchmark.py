@@ -8,6 +8,7 @@ import time
 from threading import Thread
 
 from helpers import game, unittest, LOG
+from pprint import pprint
 
 def random_ai():
     """
@@ -15,42 +16,29 @@ def random_ai():
     """
     return random.choice(['han', 'lando'])
 
-def run_player(r, k, name, ai, signal):
+def run_player(r, k, name, ai):
     """
     A self-contained player.  Joins game, then plays when it can.  If
     passed an ai, then will use it.
     """
     game.join(r, k, name)
-    game.enter_temple(r, k, name)
-    info = game.get_info(r, k, name, signal={})
+    informator = game.info(r, k, name)
 
     # This loop will not work if there is chat being simulated,
     # because then non-status bearing infos will be generated.
-    while True:
-
-        if info['status']['round'] == 0: # not yet started.
+    for info in informator:
+        print info
+        if info is None:
+            #print '%s Waiting for new info...' % name
             pass
-        elif(info['you']['location'] == 'temple'
-             and 'decision' not in info['you']):
+        elif(info['you']['state'] == 'undecided'):
             game.move(r, k, name, random_ai())
-        elif(info['you']['location'] == 'camp'
-             and len(info['status']['table']) == 0): # could break on
-            # artifact
-            # capture
-            game.enter_temple(r, k, name)
-        elif info['status']['round'] == 5: # done!
+        elif info['status']['round'] == 'done': # done!
             break
         else:
-            raise Exception('Unhandled state: %s' % info)
+            pass
 
-        from pprint import pprint
-        print pprint(info)
-
-        # this blocks until something happens.
-        info = game.get_info(r, k, name,
-                             start_id=info['id'],
-                             signal=signal)
-
+            #raise Exception('Unhandled state: %s' % pprint(info))
 
 class Player(object):
     def __init__(self, name, ai=random_ai):
@@ -63,11 +51,9 @@ class SimulationBenchmarkTest(unittest.TestCase):
     def setUp(self):
         self.r = redis.StrictRedis(db='SimulationBenchmark')
         self.r.flushdb()
-        self.signal = {}
         self.timeout = 5
 
     def tearDown(self):
-        self.signal['stop'] = True
         pass
 
     def simulate_game_threaded_players(self, game, *players):
@@ -77,7 +63,7 @@ class SimulationBenchmarkTest(unittest.TestCase):
         manually.
         """
         threads = [Thread(target=run_player,
-                          args=(self.r, game, p.name, p.ai, self.signal))
+                          args=(self.r, game, p.name, p.ai))
                    for p in players]
 
         for thread in threads:
