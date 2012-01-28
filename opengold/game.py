@@ -64,6 +64,8 @@ ARTIFACTS_DESTROYED = 'artifacts.destroyed' # set
 ARTIFACTS_SEEN_COUNT = 'artifacts.seen.count' # integer
 
 LOCK = 'lock'
+UNLOCKED = 'unlocked'
+LOCKED = 'locked'
 
 def timestamp():
     """
@@ -90,33 +92,57 @@ def advances_game_state(func):
         while True:
             try:
                 pipe.watch(path(k, LOCK))
-                if pipe.exists(path(k, LOCK)):
+                if pipe.get(path(k, LOCK)) == LOCKED:
+                    #pubsub = pipe.pubsub()
+                    #pubsub.subscribe(path(k, LOCK))
+                    #pubsub.listen().next()
                     continue # TODO less optimism -- pubsub?
                 else:
                     pipe.multi()
-                    pipe.set(path(k, LOCK), True)
+                    pipe.set(path(k, LOCK), LOCKED)
                     pipe.execute()
-                    if func(r, k, player, *args):
-                        _save_update(r, k, { func.func_name: player })
-                        _advance_game_state(r, k)
-                        _save_player_state(r, k, player)
-                        return True
-                    else:
-                        return False
+                    #print "%s has lock on %s" % (player, k)
+
+                    try:
+                        if func(r, k, player, *args):
+                            _save_update(r, k, { func.func_name: player })
+                            _advance_game_state(r, k)
+                            _save_game_state(r, k)
+                            return True
+                        else:
+                            return False
+                    finally:
+                        #print "%s giving up lock on %s" % (player, k)
+                        r.set(path(k, LOCK), UNLOCKED) # when it's not Can, Deadlock is bad
             except WatchError:
+                #print "%s failed to get lock on %s" % (player, k)
                 continue
             finally:
-                r.delete(path(k, LOCK)) # when it's not Can, Deadlock is bad
                 pipe.reset()
+                #r.publish(path(k, LOCK), '')
 
     return wrapped
 
 def _get_players(r, k):
     """
-    Get a list of all players in the game.
+    Get a list of all players in the game formed as dictionaries.
+    Notates them with their artifacts.
     """
-    return [r.hgetall(path(k, PLAYERS, name))
-            for name in sorted(r.smembers(path(k, PLAYERS)))]
+    players = [r.hgetall(path(k, PLAYERS, name))
+               for name in sorted(r.smembers(path(k, PLAYERS)))]
+
+    for player in players:
+        try:
+            assert NAME in player
+        except:
+            print "NO NAME IN PLAYER %s" % player
+            print "PLAYERS %s" % players
+
+        player[ARTIFACTS_CAPTURED] = [
+            get_card(idx).name
+            for idx in r.lrange(path(k, PLAYERS, player[NAME], ARTIFACTS_CAPTURED), 0, -1)]
+
+    return players
 
 def _save_update(r, k, update):
     """
@@ -130,21 +156,15 @@ def _save_update(r, k, update):
     r.rpush(path(k, UPDATES), json.dumps(update))
     r.publish(k, update_id)
 
-def _save_player_state(r, k, name):
-    """
-    Saves a JSON representation of the specified player name's current state.
-    """
-    player = r.hgetall(path(k, PLAYERS, name))
-    player[ARTIFACTS_CAPTURED] = [
-        get_card(idx).name
-        for idx in r.lrange(path(k, PLAYERS, name, ARTIFACTS_CAPTURED), 0, -1)]
-    r.rpush(path(k, PLAYERS, name, SAVED), json.dumps(player))
-
 def _save_game_state(r, k):
     """
     Saves a JSON representation of the game's current state.
     """
     players = _get_players(r, k)
+
+    for player in players:
+        r.rpush(path(k, PLAYERS, player[NAME], SAVED), json.dumps(player))
+
     r.rpush(
         path(k, SAVED),
         json.dumps(
@@ -193,15 +213,13 @@ def _advance_game_state(r, k):
     elif not any(p[STATE] == UNDECIDED for p in players):
         landos = filter(lambda p: p[STATE] == LANDO, players)
         hans = filter(lambda p: p[STATE] == HAN, players)
-        # import pdb
-        # pdb.set_trace()
         assert len(landos) + len(hans) > 0
         if len(landos):
             _take_loot(r, k, landos)  # LANDO => CAMP
         if len(hans):  # HAN => CAMP | UNDECIDED
             _deal_card(r, k, hans)
+        _advance_game_state(r, k)
 
-    _save_game_state(r, k)
 
 def _initialize_game(r, k):
     """
@@ -228,8 +246,11 @@ def _next_round(r, k, players):
     for player in players:
         r.hset(path(k, PLAYERS, player[NAME]), STATE, UNDECIDED)
 
+    try:
+        assert r.scard(path(k, ARTIFACTS_UNSEEN)) > 0
+    except:
+        print "ERROR NO ARTIFACTS IN ROUND %s " % r.get(path(k, ROUND))
     new_artifact = r.spop(path(k, ARTIFACTS_UNSEEN))
-    assert new_artifact is not None
     _round = r.incr(path(k, ROUND))
     _save_update(r, k, { ROUND: int(_round) } )
     _save_update(r, k, { ARTIFACTS_IN_PLAY: get_card(new_artifact).name } )
@@ -332,10 +353,11 @@ def _game_over(r, k, players):
 
     by_artifacts = {}
     for candidate in candidates:
-        artifacts = len(candidate.artifacts)
-        by_artifacts[artifacts] = by_artifacts.get(artifacts, []) + [candidate]
+        artifacts = player[ARTIFACTS_CAPTURED]
+        by_artifacts[len(artifacts)] = by_artifacts.get(len(artifacts), []) + [candidate]
 
-    winners = sorted(by_artifacts.keys(), reverse=True)[0]
+    most_artifacts = sorted(by_artifacts.keys(), reverse=True)[0]
+    winners = by_artifacts[most_artifacts]
     for player in players:
         r.hset(path(k, PLAYERS, player[NAME]), STATE, WON if player in winners else LOST)
 
@@ -435,12 +457,13 @@ def info(r, k, player=None, start_id=0):
             info = {
                 STATE:    json.loads(r.lindex(path(k, SAVED), -1)),
                 UPDATES:  [json.loads(j) for j in r.lrange(path(k, UPDATES), start_id, -1)],
-                UPDATE_ID: int(r.get(path(k, UPDATE_ID)))
+                UPDATE_ID: int(r.get(path(k, UPDATE_ID)) or 0)
                 }
+
             if player:
                 saved_player = r.lindex(path(k, PLAYERS, player, SAVED), -1)
-                assert saved_player is not None
-                info[YOU] = json.loads(saved_player)
+                if saved_player:
+                    info[YOU] = json.loads(saved_player)
 
             yield info
 

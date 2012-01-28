@@ -5,10 +5,12 @@ Simulate a lot of simultaneous games.
 import redis
 import random
 import time
+from uuid import uuid4
 from threading import Thread
 
-from helpers import game, unittest, LOG
+from helpers import game, unittest, LOG, COUNTRY_NAMES, PLAYER_NAMES
 from pprint import pprint
+
 
 def random_ai():
     """
@@ -22,23 +24,26 @@ def run_player(r, k, name, ai):
     passed an ai, then will use it.
     """
     game.join(r, k, name)
+
+
+    time.sleep(0.1) # give time for other players to start
+
+    game.start(r, k, name)
     informator = game.info(r, k, name)
 
     # This loop will not work if there is chat being simulated,
     # because then non-status bearing infos will be generated.
     for info in informator:
-        print info
+        if 'you' not in info:
+            print "%s didn't make it into game %s" % (name, k)
+            break
+
         if info is None:
-            #print '%s Waiting for new info...' % name
             pass
         elif(info['you']['state'] == 'undecided'):
             game.move(r, k, name, random_ai())
-        elif info['status']['round'] == 'done': # done!
+        elif info['you']['state'] in ['won', 'lost']: # done!
             break
-        else:
-            pass
-
-            #raise Exception('Unhandled state: %s' % pprint(info))
 
 class Player(object):
     def __init__(self, name, ai=random_ai):
@@ -51,7 +56,7 @@ class SimulationBenchmarkTest(unittest.TestCase):
     def setUp(self):
         self.r = redis.StrictRedis(db='SimulationBenchmark')
         self.r.flushdb()
-        self.timeout = 5
+        self.timeout = 30
 
     def tearDown(self):
         pass
@@ -71,11 +76,20 @@ class SimulationBenchmarkTest(unittest.TestCase):
 
         return threads
 
-    def test_one_game_two_random_threaded_players(self):
-        threads = self.simulate_game_threaded_players(
-            'game',
-            Player('betty', random_ai),
-            Player('lou', random_ai))
+    def x_games_x_threaded_players(self, n_games, n_players):
+        """
+        Test a certain number of games w/ certain number of players,
+        using threading.
+        """
+        threads = []
+
+        for g in range(0, n_games):
+            threads.extend(
+                self.simulate_game_threaded_players(
+                    str(uuid4()),
+                    *[Player(str(uuid4()), random_ai) for p in range(0, n_players)]))
+#                    COUNTRY_NAMES.pop(),
+#                    *[Player(PLAYER_NAMES.pop(), random_ai) for p in range(0, n_players)]))
 
         start = time.time()
 
@@ -86,7 +100,50 @@ class SimulationBenchmarkTest(unittest.TestCase):
 
         duration = time.time() - start
 
-        print "test took %s seconds" % duration
+        print "%s games with %s threaded players took %s seconds." % \
+            (n_games, n_players, duration)
+
+    def test_one_game_two_random_threaded_players(self):
+        self.x_games_x_threaded_players(1, 2)
+
+    def test_one_game_three_random_threaded_players(self):
+        self.x_games_x_threaded_players(1, 3)
+
+    # def test_one_game_four_random_threaded_players(self):
+    #     self.x_games_x_threaded_players(1, 4)
+
+    # def test_one_game_six_random_threaded_players(self):
+    #     self.x_games_x_threaded_players(1, 6)
+
+    # def test_one_game_eight_random_threaded_players(self):
+    #     self.x_games_x_threaded_players(1, 8)
+
+    # def test_five_games_two_random_threaded_players(self):
+    #     self.x_games_x_threaded_players(5, 2)
+
+    # def test_five_games_three_random_threaded_players(self):
+    #     self.x_games_x_threaded_players(5, 3)
+
+    # def test_five_games_four_random_threaded_players(self):
+    #     self.x_games_x_threaded_players(5, 4)
+
+    # def test_five_games_six_random_threaded_players(self):
+    #     self.x_games_x_threaded_players(5, 6)
+
+    # def test_ten_games_two_random_threaded_players(self):
+    #     self.x_games_x_threaded_players(10, 2)
+
+    # def test_twentyfive_games_two_random_threaded_players(self):
+    #     self.x_games_x_threaded_players(25, 2)
+
+    # def test_fifty_games_two_random_threaded_players(self):
+    #     self.x_games_x_threaded_players(50, 2)
+
+    def test_one_hundred_games_two_random_threaded_players(self):
+        self.x_games_x_threaded_players(100, 2)
+
+    def test_one_hundred_games_four_random_threaded_players(self):
+        self.x_games_x_threaded_players(100, 4)
 
 # Primitive runner!
 if __name__ == '__main__':
