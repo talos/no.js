@@ -100,21 +100,22 @@ def advances_game_state(func):
                     pipe.multi()
                     pipe.set(path(k, LOCK), LOCKED)
                     pipe.execute()
-                    #print "%s has lock on %s" % (player, k)
 
                     try:
                         if func(r, k, player, *args):
-                            _save_update(r, k, { func.func_name: player })
                             _advance_game_state(r, k)
+                            #  we save game state before saving an
+                            #  update; that way, there is always an
+                            #  update being published after a game
+                            #  state is saved.
                             _save_game_state(r, k)
+                            _save_update(r, k, { func.func_name: player })
                             return True
                         else:
                             return False
                     finally:
-                        #print "%s giving up lock on %s" % (player, k)
                         r.set(path(k, LOCK), UNLOCKED) # when it's not Can, Deadlock is bad
             except WatchError:
-                #print "%s failed to get lock on %s" % (player, k)
                 continue
             finally:
                 pipe.reset()
@@ -447,18 +448,22 @@ def info(r, k, player=None, start_id=0):
             listener.next() # block waiting for an update to
                             # generate something newer
         else:
+            cur_id = int(r.get(path(k, UPDATE_ID)) or 0)
             # Components are already in JSON.
             info = {
-                STATE:    json.loads(r.lindex(path(k, SAVED), -1)),
                 UPDATES:  [json.loads(j) for j in r.lrange(path(k, UPDATES), start_id, -1)],
-                UPDATE_ID: int(r.get(path(k, UPDATE_ID)) or 0)
+                UPDATE_ID: cur_id
                 }
+
+            if r.exists(path(k, SAVED)):
+                info[STATE] = json.loads(r.lindex(path(k, SAVED), -1))
 
             if player:
                 saved_player = r.lindex(path(k, PLAYERS, player, SAVED), -1)
                 if saved_player:
                     info[YOU] = json.loads(saved_player)
 
+            start_id = cur_id
             yield info
 
 def list_names(r):

@@ -207,37 +207,35 @@ class TestGame(unittest.TestCase):
 
     def test_blocking_info(self):
         info = game.info(self.r, 'blocked')
-        self.assertIsNone(info.next()) # put it into blocking mode
         t = Thread(target=info.next)
         t.start()
+
         self.assertTrue(t.is_alive())
         time.sleep(0.5)
-
         self.assertTrue(t.is_alive())
 
-        self.assertTrue(game.join(self.r, 'blocked', 'some dude'))
+        game.join(self.r, 'blocked', 'some dude')
+
         t.join(1)
         self.assertFalse(t.is_alive())
 
-    # def test_blocking_info_via_id(self):
-    #     info = game.info(self.r, 'game')
-    #     self.assertTrue(game.join(self.r, 'game', 'thing one'))
-    #     t_all_info = Thread(target=info.next)
-    #     t_all_info.start()
-    #     t_all_info.join(1)
-    #     self.assertFalse(t_all_info.is_alive())
+    def test_blocking_info_via_id(self):
+        info = game.info(self.r, 'game')
+        game.join(self.r, 'game', 'thing one')
+        t_all_info = Thread(target=info.next)
+        t_all_info.start()
+        t_all_info.join(1)
+        self.assertFalse(t_all_info.is_alive())
 
-    #     self.assertIsNone(info.next()) # put it into blocking mode
-    #     t_partial_info = Thread(target=info.next)
+        t_partial_info = Thread(target=info.next)
+        t_partial_info.start()
+        self.assertTrue(t_partial_info.is_alive())
+        time.sleep(0.5)
+        self.assertTrue(t_partial_info.is_alive())
 
-    #     t_partial_info.start()
-    #     self.assertTrue(t_partial_info.is_alive())
-    #     time.sleep(0.5)
-    #     self.assertTrue(t_partial_info.is_alive())
-
-    #     self.assertTrue(game.join(self.r, 'game', 'some dude'))
-    #     t_partial_info.join(1)
-    #     self.assertFalse(t_partial_info.is_alive())
+        self.assertTrue(game.join(self.r, 'game', 'some dude'))
+        t_partial_info.join(1)
+        self.assertFalse(t_partial_info.is_alive())
 
     # def test_triple_landos_moves_to_round_2(self):
     #     self.assertTrue(game.join(self.r, 'game', 'socrates'))
