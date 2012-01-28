@@ -11,7 +11,7 @@ from helpers import TestOpengoldServer, HOST, unittest
 
 class TestServerTemplates(TestOpengoldServer):
     """
-    Test JSON methods on the server.  Does not hit the template side of things.
+    Tests serving templates directly.
     """
 
     def test_load_game_index_no_games(self):

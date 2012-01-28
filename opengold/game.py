@@ -1,10 +1,9 @@
 from deck import TREASURES, HAZARDS, ARTIFACTS, Treasure, Hazard, Artifact, get_card
 from redis import WatchError
-
 import json
 import time
 
-ARTIFACT_VALUES = [5, 5, 10, 10, 15] # corresponding to which artifact this is
+ARTIFACT_VALUES = [5, 5, 10, 10, 15] # Value corresponding to which artifact this is.  Beware of the 0-index.
 
 # Player states
 JOINED = 'joined'
@@ -220,7 +219,6 @@ def _advance_game_state(r, k):
             _deal_card(r, k, hans)
         _advance_game_state(r, k)
 
-
 def _initialize_game(r, k):
     """
     Create deck, artifacts etc.
@@ -273,7 +271,7 @@ def _take_loot(r, k, landos):
             r.rpush(path(k, CAPTURED), card_idx)
         elif isinstance(card, Artifact):
             r.lrem(path(k, TABLE), 1, card_idx)
-            artifact_value = ARTIFACT_VALUES[int(r.get(path(k, ARTIFACTS_SEEN_COUNT)) or 0)]
+            artifact_value = ARTIFACT_VALUES[int(r.get(path(k, ARTIFACTS_SEEN_COUNT))) - 1]
             r.lrem(path(k, ARTIFACTS_IN_PLAY), 1, card_idx)
             if len(landos) == 1: #  lucky lando
                 _save_update(r, k,
@@ -437,10 +435,6 @@ def info(r, k, player=None, start_id=0):
     """
     Returns a generator that will return info objects newer than the
     last one it generated, starting with start_id.
-
-    The generator will return None once if there is nothing newer or
-    the game doesn't exist.  A subsequent call to .next() will block
-    until something newer becomes available.
     """
     pubsub = r.pubsub()
     pubsub.subscribe(k)
@@ -449,7 +443,7 @@ def info(r, k, player=None, start_id=0):
 
     while True:
         if start_id >= int(r.get(path(k, UPDATE_ID)) or 0):
-            yield None
+            #yield None
             listener.next() # block waiting for an update to
                             # generate something newer
         else:

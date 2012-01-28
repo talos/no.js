@@ -34,27 +34,6 @@ class PlayerMixin():
         return self.get_cookie(urllib2.quote(game_name, ''), None, self.application.cookie_secret)
 
 
-# class IndexHandler(Jinja2Rendering):
-
-#     def get(self):
-#         """
-#         List all games currently available.
-#         """
-#         names = game.list_names(self.db_conn)
-#         self.set_body(json.dumps(names))
-
-
-        # if self.get_argument('game'):
-        #     return self.redirect(self.get_argument('game'))
-        # else:
-        #     context = {
-        #         'games': [{ 'name': name,
-        #                     # todo this will lock all games!
-        #                     'status': game.get_status(self.db_conn, name) }
-        #                   for name in game.list_names(self.db_conn)]
-        #         }
-        #     return self.render_template('index.html', **context)
-
 class IndexHandler(MustacheRendering):
 
     def get(self):
@@ -68,6 +47,7 @@ class IndexHandler(MustacheRendering):
             return self.render()
         else:
             return self.render_template('app', **context)
+
 
 class GameHandler(MustacheRendering, PlayerMixin):
 
@@ -144,7 +124,7 @@ class JoinHandler(WebMessageHandler, PlayerMixin):
         return self.render()
 
 
-class EnterTempleHandler(WebMessageHandler, PlayerMixin):
+class StartHandler(WebMessageHandler, PlayerMixin):
 
     @unquote_game_name
     def post(self, game_name):
@@ -153,7 +133,7 @@ class EnterTempleHandler(WebMessageHandler, PlayerMixin):
         """
         player = self.get_player(game_name)
         if player:
-            game.enter_temple(self.db_conn, game_name, player)
+            game.start(self.db_conn, game_name, player)
             self.set_status(200)
             #self.redirect('/%s' % kwargs['game_name'])
         else:
@@ -186,11 +166,10 @@ config = {
     'handler_tuples': [(r'^/$', IndexHandler),
                        (r'^/(?P<game_name>[^/]+)$', GameHandler),
                        (r'^/(?P<game_name>[^/]+)/join$', JoinHandler),
-                       (r'^/(?P<game_name>[^/]+)/enter$', EnterTempleHandler),
+                       (r'^/(?P<game_name>[^/]+)/start$', StartHandler),
                        (r'^/(?P<game_name>[^/]+)/move$', MoveHandler)],
-                       #(r'^/(?P<game_name>[^/]+)/poll$', PollHandler)],
     'cookie_secret': str(uuid.uuid4()),  # this will kill all sessions/games if the server crashes!
-    'db_conn': redis.StrictRedis(db=sys.argv[1] or 'opengold'),
+    'db_conn': redis.StrictRedis(db=sys.argv[1] if len(sys.argv) > 1 else 'opengold'),
     'template_loader': load_mustache_env('templates')
 }
 

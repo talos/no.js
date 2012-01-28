@@ -205,19 +205,19 @@ class TestGame(unittest.TestCase):
     #             'artifacts.captured': [],
     #             'state': 'undecided' }, bar['you'])
 
-    # def test_blocking_info(self):
-    #     info = game.info(self.r, 'blocked')
-    #     self.assertIsNone(info.next()) # put it into blocking mode
-    #     t = Thread(target=info.next)
-    #     t.start()
-    #     self.assertTrue(t.is_alive())
-    #     time.sleep(0.5)
+    def test_blocking_info(self):
+        info = game.info(self.r, 'blocked')
+        self.assertIsNone(info.next()) # put it into blocking mode
+        t = Thread(target=info.next)
+        t.start()
+        self.assertTrue(t.is_alive())
+        time.sleep(0.5)
 
-    #     self.assertTrue(t.is_alive())
+        self.assertTrue(t.is_alive())
 
-    #     self.assertTrue(game.join(self.r, 'blocked', 'some dude'))
-    #     t.join(1)
-    #     self.assertFalse(t.is_alive())
+        self.assertTrue(game.join(self.r, 'blocked', 'some dude'))
+        t.join(1)
+        self.assertFalse(t.is_alive())
 
     # def test_blocking_info_via_id(self):
     #     info = game.info(self.r, 'game')

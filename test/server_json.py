@@ -6,6 +6,7 @@ of test class.
 """
 
 import requests
+from requests import async
 import json
 import urllib2
 
@@ -33,13 +34,11 @@ class TestServerJSON(TestOpengoldServer):
         jack_info = json.loads(jack.get(HOST + '/hill', headers=JSON_HEADER).content)
         jill_info = json.loads(jill.get(HOST + '/hill', headers=JSON_HEADER).content)
         expected_players = [{'name': 'jack',
-                             'decision': False,
-                             'location': 'camp'},
+                             'state': 'joined'},
                            {'name': 'jill',
-                            'decision': False,
-                            'location': 'camp'}]
-        self.assertEquals(expected_players, jack_info['status']['players'])
-        self.assertEquals(expected_players, jill_info['status']['players'])
+                            'state': 'joined'}]
+        self.assertEquals(expected_players, jack_info['state']['players'])
+        self.assertEquals(expected_players, jill_info['state']['players'])
         self.assertEquals('jack', jack_info['you']['name'])
         self.assertEquals('jill', jill_info['you']['name'])
 
@@ -89,33 +88,53 @@ class TestServerJSON(TestOpengoldServer):
         xss = "<script type='text/javascript'>document.write('bullshit')</script>"
         xss_quoted = urllib2.quote(xss, '')
 
-        s.post(HOST + '/%s/join' % xss_quoted, data={'player':'bastard'})
+        self.assertEquals(
+            200,
+            s.post(HOST + '/%s/join' % xss_quoted, data={'player':'bastard'}).status_code)
 
-        self.assertEquals({'names': [xss]},
-                          json.loads(s.get(HOST + '/', headers=JSON_HEADER).content))
+        self.assertEquals(
+            {'names': [xss]},
+            json.loads(s.get(HOST + '/', headers=JSON_HEADER).content))
 
     def test_unicode_game_name(self):
         """
-        Totally arbitrary text is allowed in titles.  Filtering is
-        done using .text() later on from the JSON object.
+        Hehe.
         """
         s = requests.session()
 
-        s.post(HOST + u"/☃/join", data={'player':'snowman'})
+        self.assertEquals(
+            200,
+            s.post(HOST + u"/☃/join", data={'player':'snowman'}).status_code)
 
         self.assertEquals({'names': [u"☃"]},
                           json.loads(s.get(HOST + '/', headers=JSON_HEADER).content))
 
     def test_unicode_player_name(self):
         """
-        Totally arbitrary text is allowed in titles.  Filtering is
-        done using .text() later on from the JSON object.
+        Sno man ftw
         """
         s = requests.session()
 
-        s.post(HOST + "/iceberg/join", data={'player':u"☃"})
+        self.assertEquals(
+            200,
+            s.post(HOST + "/iceberg/join", data={'player':u"☃"}).status_code)
         resp = s.get(HOST + "/iceberg", headers=JSON_HEADER).content
         self.assertEquals(u"☃", json.loads(resp)['you']['name'])
+
+    def test_long_poll(self):
+        """
+        When nothing has happened since an ID, JSON calls for info after a
+        specific ID should hang.
+        """
+        s = requests.session()
+
+        s.post(HOST + "/game/join", data={"player":"django"})
+        last_id = json.loads(s.get(HOST + "/game", headers=JSON_HEADER).content)['id']
+
+        import pdb
+        pdb.set_trace()
+
+        poll = async.get(HOST + "/game", headers=JSON_HEADER, data={"id":last_id})
 
     # def test_new_game(self):
     #     self.assertEquals({

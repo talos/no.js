@@ -5,6 +5,8 @@ Simulate a lot of simultaneous games.
 import redis
 import random
 import time
+import gevent
+
 from uuid import uuid4
 from threading import Thread
 
@@ -18,32 +20,31 @@ def random_ai():
     """
     return random.choice(['han', 'lando'])
 
-def run_player(r, k, name, ai):
+def run_player(r, k, name, wait_for_n_players, sleeper,
+               ai=random_ai, sleep_time=0):
     """
-    A self-contained player.  Joins game, then plays when it can.  If
-    passed an ai, then will use it.
+    A self-contained player.  Joins game, plays when it can.
     """
     game.join(r, k, name)
+    sleeper.sleep(sleep_time)
 
-
-    time.sleep(0.1) # give time for other players to start
-
-    game.start(r, k, name)
     informator = game.info(r, k, name)
+    sleeper.sleep(sleep_time)
 
-    # This loop will not work if there is chat being simulated,
-    # because then non-status bearing infos will be generated.
     for info in informator:
-        if 'you' not in info:
-            print "%s didn't make it into game %s" % (name, k)
-            break
+        sleeper.sleep(sleep_time)
 
-        if info is None:
-            pass
-        elif(info['you']['state'] == 'undecided'):
-            game.move(r, k, name, random_ai())
-        elif info['you']['state'] in ['won', 'lost']: # done!
-            break
+        player_state = info['you']['state']
+        if player_state == 'joined':
+            if len(info['state']['players']) == wait_for_n_players:
+                game.start(r, k, name)
+            else:
+                pass
+        elif player_state == 'undecided':
+            game.move(r, k, name, ai())
+        elif player_state in ['won', 'lost']: # done!
+            return True
+
 
 class Player(object):
     def __init__(self, name, ai=random_ai):
@@ -56,10 +57,45 @@ class SimulationBenchmarkTest(unittest.TestCase):
     def setUp(self):
         self.r = redis.StrictRedis(db='SimulationBenchmark')
         self.r.flushdb()
-        self.timeout = 30
+        self.timeout = 240
 
     def tearDown(self):
         pass
+
+    def simulate_game_gevent_players(self, game, *players):
+        """
+        Simulate a single game using gevent.  Returns an array of greenlets.
+        """
+        greenlets = [gevent.spawn(run_player,
+                                  self.r, game, p.name, len(players), gevent, p.ai)
+                     for p in players]
+        return greenlets
+
+    def x_games_x_greenlet_players(self, n_games, n_players):
+        """
+        Test a certain number of games w/ certain number of players,
+        using greenlets.
+        """
+        greenlets = []
+
+        for g in range(0, n_games):
+            greenlets.extend(
+                self.simulate_game_gevent_players(
+                    str(uuid4()),
+                    *[Player(str(uuid4()), random_ai) for p in range(0, n_players)]))
+
+        start = time.time()
+
+        gevent.joinall(greenlets, timeout=self.timeout)
+        gevent.killall(greenlets)
+
+        duration = time.time() - start
+
+        if duration > self.timeout:
+            self.fail('Greenlets not finished after %s seconds' % self.timeout)
+
+        print "%s games with %s greenlet players took %s seconds." % \
+            (n_games, n_players, duration)
 
     def simulate_game_threaded_players(self, game, *players):
         """
@@ -68,7 +104,7 @@ class SimulationBenchmarkTest(unittest.TestCase):
         manually.
         """
         threads = [Thread(target=run_player,
-                          args=(self.r, game, p.name, p.ai))
+                          args=(self.r, game, p.name, len(players), time, p.ai))
                    for p in players]
 
         for thread in threads:
@@ -103,11 +139,26 @@ class SimulationBenchmarkTest(unittest.TestCase):
         print "%s games with %s threaded players took %s seconds." % \
             (n_games, n_players, duration)
 
-    def test_one_game_two_random_threaded_players(self):
-        self.x_games_x_threaded_players(1, 2)
+    # def test_one_game_two_random_greenlet_players(self):
+    #     self.x_games_x_greenlet_players(1, 2)
 
-    def test_one_game_three_random_threaded_players(self):
-        self.x_games_x_threaded_players(1, 3)
+    # def test_one_game_eight_random_greenlet_players(self):
+    #     self.x_games_x_greenlet_players(1, 8)
+
+    # def test_five_games_eight_random_greenlet_players(self):
+    #     self.x_games_x_greenlet_players(5, 8)
+
+    # def test_fifty_games_four_random_greenlet_players(self):
+    #     self.x_games_x_greenlet_players(50, 4)
+
+    def test_hundred_games_four_random_greenlet_players(self):
+        self.x_games_x_greenlet_players(100, 4)
+
+    # def test_one_game_two_random_threaded_players(self):
+    #     self.x_games_x_threaded_players(1, 2)
+
+    # def test_one_game_three_random_threaded_players(self):
+    #     self.x_games_x_threaded_players(1, 3)
 
     # def test_one_game_four_random_threaded_players(self):
     #     self.x_games_x_threaded_players(1, 4)
@@ -139,11 +190,11 @@ class SimulationBenchmarkTest(unittest.TestCase):
     # def test_fifty_games_two_random_threaded_players(self):
     #     self.x_games_x_threaded_players(50, 2)
 
-    def test_one_hundred_games_two_random_threaded_players(self):
-        self.x_games_x_threaded_players(100, 2)
+    # def test_one_hundred_games_two_random_threaded_players(self):
+    #     self.x_games_x_threaded_players(100, 2)
 
-    def test_one_hundred_games_four_random_threaded_players(self):
-        self.x_games_x_threaded_players(100, 4)
+    # def test_one_hundred_games_four_random_threaded_players(self):
+    #     self.x_games_x_threaded_players(100, 4)
 
 # Primitive runner!
 if __name__ == '__main__':
