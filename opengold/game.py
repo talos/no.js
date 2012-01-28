@@ -132,12 +132,7 @@ def _get_players(r, k):
                for name in sorted(r.smembers(path(k, PLAYERS)))]
 
     for player in players:
-        try:
-            assert NAME in player
-        except:
-            print "NO NAME IN PLAYER %s" % player
-            print "PLAYERS %s" % players
-
+        player[player[STATE]] = True  # a bit hacky, but this makes templating easier
         player[ARTIFACTS_CAPTURED] = [
             get_card(idx).name
             for idx in r.lrange(path(k, PLAYERS, player[NAME], ARTIFACTS_CAPTURED), 0, -1)]

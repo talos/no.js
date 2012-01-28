@@ -1,10 +1,23 @@
 <html>
+
+  <noscript>
+    <meta http-equiv="refresh" content="10" />
+  </noscript>
+
   <!-- require.js -->
   <script data-main="js/main" src="http://requirejs.org/docs/release/1.0.4/minified/require.js"  type="text/javascript"></script>
 
   <!-- CSS -->
   <link rel="stylesheet" type="text/css" href="css/default.css" />
   <body>
+
+    <div id="error">
+      {{#error}}
+        Ohnoes! There was an error: &quot;{{errro}}&quot;.
+      {{/error}}
+    </div>
+
+    {{! LIST OF GAMES }}
     <div id="index">
       {{#names}}
         <div>{{.}}</div>
@@ -12,15 +25,174 @@
       {{^names}}
       <div>No games currently available.</div>
       {{/names}}
+
+      <div class="join">
+        <form action="/
+      </div>
     </div>
 
     <div id="game">
-      {{#status}}
-        
-      {{/status}}
+      <div class="state">
+
+        {{! CURENT GAME STATE }}
+        {{#state}}
+          <div class="players">
+            {{#players}}
+              <div>
+                <div>Name: {{name}}</div>
+                <div>State: {{state}}</div>
+              </div>
+            {{/players}}
+          </div>
+          <div class="table">
+            In play:
+            {{#table}}
+              {{.}}
+            {{/table}}
+          </div>
+          <div class="captured">
+            Loot captured:
+            {{#captured}}
+              {{.}}
+            {{/captured}}
+          </div>
+          <div class="pot">Pot: {{pot}}</div>
+          <div class="round">Round: {{round}}</div>
+          <div class="artifacts_destroyed">
+            Artifacts destroyed:
+            {{#artifacts.destroyed}}
+              {{.}}
+            {{/artifacts.destroyed}}
+          </div>
+          <div class="artifacts_seen_count">
+            Artifacts seen: {{artifacts.seen.count}}
+          </div>
+          <div class="artifacts_in_play">
+            Artifacts destroyed:
+            {{#artifacts.in.play}}
+              {{.}}
+            {{/artifacts.in.play}}
+          </div>
+        {{/state}}
+      </div>
+
+      {{! IN-GAME BLOCK }}
       {{#you}}
 
+        {{! CURRENT PLAYER STATE }}
+        <div class="you">
+          <div>Name: {{name}}</div>
+          <div>Loot: {{loot}}</div>
+          <div>Artifacts captured:
+            {{#artifacts.captured}}
+              {{.}}
+            {{/artifacts.captured}}
+          </div>
+
+          {{! SO MANY CHOICES }}
+          <div class="state">
+            {{#joined?}}
+              <form action="start" method="post">
+                <input type="hidden" name="id" value="{{id}}" />
+                <input type="submit" value="Start Game" />
+              </form>
+            {{/joined?}}
+
+            {{#camp?}}
+              You're safe at camp.
+            {{/camp?}}
+
+            {{#undecided?}}
+              <form action="move" method="post">
+                <input type="hidden" name="id" value="{{id}}" />
+                <input type="hidden" name="move" value="han">
+                <input type="submit" value="Han" />
+              </form>
+              <form action="move" method="post">
+                <input type="hidden" name="id" value="{{id}}" />
+                <input type="hidden" name="move" value="lando">
+                <input type="submit" value="Lando" />
+              </form>
+            {{/undecided?}}
+
+            {{#han?}}
+              You're going Han.
+            {{/han?}}
+
+            {{#lando?}}
+              Lando-ing out.
+            {{/lando?}}
+
+            {{#won?}}
+              Congrats dude, ya won.
+            {{/won?}}
+
+            {{#lost?}}
+              Sorry bra, this was not your night.
+            {{/lost?}}
+          </div>
+        </div>
       {{/you}}
+
+      {{! UPDATES FOR CURRENT GAME }}
+      <div class="updates">
+        {{#updates}}
+          <div>
+            {{#joined?}}
+              {{joined}} joined the game.
+            {{/joined?}}
+
+            {{#started?}}
+              {{started}} wants to enter the temple.
+            {{/started?}}
+
+            {{#decision?}}
+              {{decision}} made their decision.
+            {{/decision?}}
+
+            {{#han}}
+              {{.}},
+            {{/han}}
+            {{#han?}}
+              are going Han.
+            {{/han?}}
+
+            {{#lando}}
+              {{.}},
+            {{/lando}}
+            {{#lando?}}
+              Lando-ing out.
+            {{/lando?}}
+
+            {{#speaker?}}
+              <span class="speaker">{{speaker}}:</span>
+            {{/speaker?}}
+            {{#message?}}
+              <span class="message">{{message}}:</span>
+            {{/message?}}
+
+            {{! TEMP -- NOT ALL UPDATES YET HANDLED }}
+            {{.}}
+          </div>
+        {{/updates}}
+
+        {{#player}}
+          <form action="chat" method="post">
+            <input type="hidden" name="id" value="{{id}}" />
+            <input type="text" name="message" />
+            <input type="submit" value="Chat" />
+          </form>
+        {{/player}}
+      </div>
+
     </div>
+
+    <noscript>
+      <div class="noscript">
+        You've disabled javascript!
+        That's groovy.
+        I hope you&quot;re OK with the page reloading every ten seconds.
+      </div>
+    </noscript>
   </body>
 </html>
