@@ -110,13 +110,15 @@ class TestOpengoldServer(unittest.TestCase):
         Start up opengold & mongrel.
         """
         cls.server = subprocess.Popen('m2sh start -host localhost',
-                                  shell=True,
-                                  stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE )
+                                      shell=True,
+                                      # stdout=subprocess.PIPE,
+                                      # stderr=subprocess.PIPE
+                                      )
         cls.app = subprocess.Popen('python opengold/server.py %s' % DB_NAME,
-                               shell=True,
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE )
+                                   shell=True,
+                                   # stdout=subprocess.PIPE,
+                                   # stderr=subprocess.PIPE
+                                   )
 
         LOG.info("Waiting for server to start")
         time.sleep(2)

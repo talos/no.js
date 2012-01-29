@@ -35,14 +35,14 @@ class TestServerTemplates(TestOpengoldServer):
 
     def test_load_nonexistent_game(self):
         s = self.new_session()
-        self.assertEquals(404, s.get(HOST + '/nada').status_code)
+        self.assertEquals(404, s.get(HOST + '/nada/').status_code)
 
     def test_join_game_notice(self):
         s = self.new_session()
 
         s.post(HOST + '/mount/join', data={'player': 'joseph'})
 
-        resp = s.get(HOST + '/mount')
+        resp = s.get(HOST + '/mount/')
         self.assertRegexpMatches(resp.content, "(?i)joseph joined")
 
     def test_start_game_notice(self):
@@ -51,7 +51,7 @@ class TestServerTemplates(TestOpengoldServer):
         s.post(HOST + '/mount/join', data={'player': 'joseph'})
         s.post(HOST + '/mount/start')
 
-        resp = s.get(HOST + '/mount')
+        resp = s.get(HOST + '/mount/')
         self.assertRegexpMatches(resp.content, "(?i)joseph wants to start venturing")
 
     def test_cant_start_game_alone(self):
@@ -60,7 +60,7 @@ class TestServerTemplates(TestOpengoldServer):
         s.post(HOST + '/cave/join', data={'player': 'hermit'})
         s.post(HOST + '/cave/start')
 
-        resp = s.get(HOST + '/cave')
+        resp = s.get(HOST + '/cave/')
         self.assertRegexpMatches(resp.content, "(?i)waiting for more players")
 
     def test_start_game(self):
@@ -72,7 +72,7 @@ class TestServerTemplates(TestOpengoldServer):
         jill.post(HOST + '/hill/join', data={'player': 'jill'})
         jill.post(HOST + '/hill/start')
 
-        resp = jack.get(HOST + '/hill')
+        resp = jack.get(HOST + '/hill/')
         self.assertRegexpMatches(resp.content, "(?i)jack and jill entered the hill")
         self.assertRegexpMatches(resp.content, "(?i)\w+ is in the deck")
 
@@ -86,7 +86,7 @@ class TestServerTemplates(TestOpengoldServer):
         jill.post(HOST + '/hill/start')
         jack.post(HOST + '/hill/move/lando')
 
-        resp = jack.get(HOST + '/hill')
+        resp = jack.get(HOST + '/hill/')
         self.assertRegexpMatches(resp.content, "(?i)jack made his move")
 
     def test_next_round_double_landos(self):
@@ -101,7 +101,7 @@ class TestServerTemplates(TestOpengoldServer):
         jack.post(HOST + '/hill/move/lando')
         jill.post(HOST + '/hill/move/lando')
 
-        resp = jack.get(HOST + '/hill')
+        resp = jack.get(HOST + '/hill/')
         self.assertRegexpMatches(resp.content, "(?i)jack and jill are landos")
         self.assertRegexpMatches(resp.content, "(?i)advancing to round 2")
 

@@ -32,6 +32,7 @@ DEATH = 'death'
 CHAT = 'chat'
 
 MOVED = 'moved'
+NOT_EXISTS = 'not_exists'
 
 ###
 #
@@ -144,11 +145,13 @@ def _save_update(r, k, update):
     Save an update as json.  This should not be called externally.
     The update must be a dict, and will be merged with TIMESTAMP and
     UPDATE_ID keys.
+
+    It is pushed onto the left of the list.
     """
     update_id = r.incr(path(k, UPDATE_ID))
     update[TIMESTAMP] = timestamp()
     update[UPDATE_ID] = update_id
-    r.rpush(path(k, UPDATES), json.dumps(update))
+    r.lpush(path(k, UPDATES), json.dumps(update))
     r.publish(k, update_id)
 
 def _save_game_state(r, k):
@@ -239,10 +242,6 @@ def _next_round(r, k, players):
     for player in players:
         r.hset(path(k, PLAYERS, player[NAME]), STATE, UNDECIDED)
 
-    try:
-        assert r.scard(path(k, ARTIFACTS_UNSEEN)) > 0
-    except:
-        print "ERROR NO ARTIFACTS IN ROUND %s " % r.get(path(k, ROUND))
     new_artifact = r.spop(path(k, ARTIFACTS_UNSEEN))
     _round = r.incr(path(k, ROUND))
     _save_update(r, k, { ROUND: int(_round) } )
@@ -292,7 +291,7 @@ def _take_loot(r, k, landos):
         r.hset(path(k, PLAYERS, lando[NAME]), STATE, CAMP) # LANDO => CAMP
         r.hincrby(path(k, PLAYERS, lando[NAME]), LOOT, payout)
 
-    _save_update(r, k, { CAPTURED : { PLAYERS : sorted([l[NAME] for l in landos]),
+    _save_update(r, k, { LANDO : { PLAYERS : sorted([l[NAME] for l in landos]),
                                       VALUE : payout,
                                       POT: remainder }})
 
@@ -319,6 +318,8 @@ def _deal_card(r, k, hans=[]):
         new_state = CAMP
     else:
         new_state = UNDECIDED
+        if hans:
+            _save_update(r, k, { HAN : { PLAYERS : sorted([h[NAME] for h in hans])}})
         if isinstance(card, Artifact):
             artifacts_seen_count = r.incr(path(k, ARTIFACTS_SEEN_COUNT))
             _save_update(r, k, { ARTIFACTS_SEEN_COUNT: int(artifacts_seen_count) })
@@ -426,7 +427,7 @@ def chat(r, k, speaker, message, superuser=False):
     else:
         return False
 
-def info(r, k, player=None, start_id=0):
+def info(r, k, player=None, start_id=-1, num_updates=10):
     """
     Returns a generator that will return info objects newer than the
     last one it generated, starting with start_id.
@@ -437,17 +438,20 @@ def info(r, k, player=None, start_id=0):
     listener = pubsub.listen()
 
     while True:
-        if start_id >= int(r.get(path(k, UPDATE_ID)) or 0):
-            #yield None
-            listener.next() # block waiting for an update to
-                            # generate something newer
+        cur_id = int(r.get(path(k, UPDATE_ID)) or -1)
+        # Game doesn't exist yet.
+        if cur_id == -1 and start_id == -1:
+            yield { STATE: { NOT_EXISTS: True },
+                    UPDATE_ID: 0 }
+        # Block waiting for an update to generate something newer
+        elif start_id >= cur_id:
+            listener.next()
         else:
-            cur_id = int(r.get(path(k, UPDATE_ID)) or 0)
             # Components are already in JSON.
             info = {
-                UPDATES:  [json.loads(j) for j in r.lrange(path(k, UPDATES), start_id, -1)],
-                UPDATE_ID: cur_id
-                }
+                UPDATES:
+                    [json.loads(j) for j in r.lrange(path(k, UPDATES), 0, num_updates)],
+                UPDATE_ID: cur_id }
 
             if r.exists(path(k, SAVED)):
                 info[STATE] = json.loads(r.lindex(path(k, SAVED), -1))

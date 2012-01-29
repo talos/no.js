@@ -25,13 +25,10 @@ def run_player(r, k, name, wait_for_n_players, sleeper,
     """
     A self-contained player.  Joins game, plays when it can.
     """
+
     game.join(r, k, name)
-    sleeper.sleep(sleep_time)
 
-    informator = game.info(r, k, name)
-    sleeper.sleep(sleep_time)
-
-    for info in informator:
+    for info in game.info(r, k, name):
         sleeper.sleep(sleep_time)
 
         player_state = info['you']['state']
@@ -45,6 +42,7 @@ def run_player(r, k, name, wait_for_n_players, sleeper,
         elif player_state in ['won', 'lost']: # done!
             return True
 
+        sleeper.sleep(sleep_time)
 
 class Player(object):
     def __init__(self, name, ai=random_ai):
@@ -139,17 +137,17 @@ class SimulationBenchmarkTest(unittest.TestCase):
         print "%s games with %s threaded players took %s seconds." % \
             (n_games, n_players, duration)
 
-    # def test_one_game_two_random_greenlet_players(self):
-    #     self.x_games_x_greenlet_players(1, 2)
+    def test_one_game_two_random_greenlet_players(self):
+        self.x_games_x_greenlet_players(1, 2)
 
-    # def test_one_game_eight_random_greenlet_players(self):
-    #     self.x_games_x_greenlet_players(1, 8)
+    def test_one_game_eight_random_greenlet_players(self):
+        self.x_games_x_greenlet_players(1, 8)
 
-    # def test_five_games_eight_random_greenlet_players(self):
-    #     self.x_games_x_greenlet_players(5, 8)
+    def test_five_games_eight_random_greenlet_players(self):
+        self.x_games_x_greenlet_players(5, 8)
 
-    # def test_fifty_games_four_random_greenlet_players(self):
-    #     self.x_games_x_greenlet_players(50, 4)
+    def test_fifty_games_four_random_greenlet_players(self):
+        self.x_games_x_greenlet_players(50, 4)
 
     def test_hundred_games_four_random_greenlet_players(self):
         self.x_games_x_greenlet_players(100, 4)

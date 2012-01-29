@@ -1,0 +1,8 @@
+div {
+    border: 1px solid #ccc;
+    padding: .2em;
+}
+
+form {
+    display: inline-block;
+}

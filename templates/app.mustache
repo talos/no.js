@@ -1,14 +1,17 @@
 <html>
 
-  <noscript>
-    <meta http-equiv="refresh" content="10" />
-  </noscript>
+  <!--<noscript>-->
+    {{! refresh on game state updates}}
+    {{#state}}
+      <meta http-equiv="refresh" content="1; url=?id={{id}}" />
+    {{/state}}
+  <!--</noscript>-->
 
   <!-- require.js -->
-  <script data-main="js/main" src="http://requirejs.org/docs/release/1.0.4/minified/require.js"  type="text/javascript"></script>
+  <!-- <script data-main="js/main" src="http://requirejs.org/docs/release/1.0.4/minified/require.js"  type="text/javascript"></script> -->
 
   <!-- CSS -->
-  <link rel="stylesheet" type="text/css" href="css/default.css" />
+  <link rel="stylesheet" type="text/css" href="/css/default.css" />
   <body>
 
     <div id="error">
@@ -20,7 +23,7 @@
     {{! LIST OF GAMES }}
     <div id="index">
       {{#names}}
-        <div>{{.}}</div>
+        <div><a href="/{{.}}/">{{.}}</a></div>
       {{/names}}
       {{^names}}
       <div>No games currently available.</div>
@@ -41,22 +44,19 @@
         {{#state}}
           <div class="players">
             {{#players}}
-              <div>
-                <div>Name: {{name}}</div>
-                <div>State: {{state}}</div>
-              </div>
+              <div>{{name}}: {{state}}</div>
             {{/players}}
           </div>
           <div class="table">
             In play:
             {{#table}}
-              {{.}}
+              <span class="card">{{.}}</span>
             {{/table}}
           </div>
           <div class="captured">
             Loot captured:
             {{#captured}}
-              {{.}}
+              <span class="card">{{.}}</span>
             {{/captured}}
           </div>
           <div class="pot">Pot: {{pot}}</div>
@@ -64,16 +64,16 @@
           <div class="artifacts_destroyed">
             Artifacts destroyed:
             {{#artifacts.destroyed}}
-              {{.}}
+              <span class="card">{{.}}</span>
             {{/artifacts.destroyed}}
           </div>
           <div class="artifacts_seen_count">
             Artifacts seen: {{artifacts.seen.count}}
           </div>
           <div class="artifacts_in_play">
-            Artifacts destroyed:
+            Artifacts in play:
             {{#artifacts.in.play}}
-              {{.}}
+              <span class="card">{{.}}</span>
             {{/artifacts.in.play}}
           </div>
         {{/state}}
@@ -88,117 +88,82 @@
           <div>Loot: {{loot}}</div>
           <div>Artifacts captured:
             {{#artifacts.captured}}
-              {{.}}
+              <span class="card">{{.}}</span>
             {{/artifacts.captured}}
           </div>
 
           {{! SO MANY CHOICES }}
           <div class="state">
-            {{#joined?}}
+            {{#joined}}
               <form action="start" method="post">
-                <input type="hidden" name="id" value="{{id}}" />
                 <input type="submit" value="Start Game" />
               </form>
-            {{/joined?}}
+            {{/joined}}
 
-            {{#camp?}}
-              You're safe at camp.
-            {{/camp?}}
 
-            {{#undecided?}}
+            {{#undecided}}
+              Wither thou?
               <form action="move" method="post">
-                <input type="hidden" name="id" value="{{id}}" />
                 <input type="hidden" name="move" value="han">
                 <input type="submit" value="Han" />
               </form>
               <form action="move" method="post">
-                <input type="hidden" name="id" value="{{id}}" />
                 <input type="hidden" name="move" value="lando">
                 <input type="submit" value="Lando" />
               </form>
-            {{/undecided?}}
+            {{/undecided}}
 
-            {{#han?}}
-              You're going Han.
-            {{/han?}}
-
-            {{#lando?}}
-              Lando-ing out.
-            {{/lando?}}
-
-            {{#won?}}
-              Congrats dude, ya won.
-            {{/won?}}
-
-            {{#lost?}}
-              Sorry bra, this was not your night.
-            {{/lost?}}
+            {{#camp}}You're safe at camp.{{/camp}}
+            {{#han}}You're going Han.{{/han}}
+            {{#lando}}Lando-ing out.{{/lando}}
+            {{#won}}Congrats dude, ya won.{{/won}}
+            {{#lost}}Sorry bra, this was not your night.{{/lost}}
           </div>
         </div>
       {{/you}}
 
       {{! JOIN GAME IF NOT STARTED YET }}
       {{^you}}
-      {{^state.round}}
+      {{#state}}
+      {{^round}}
       <div class="join">
-        <form action="join" type="post">
+        <form action="join" method="post">
           <label for="name">Name:</label>
-          <input type="text" name="name" />
+          <input type="text" name="player" />
           <input type="submit" value="Join" />
         </form>
       </div>
-      {{/state.round}}
+      {{/state}}
+      {{/round}}
       {{/you}}
 
       {{! UPDATES FOR CURRENT GAME }}
       <div class="updates">
-        {{#updates}}
-          <div>
-            {{#joined?}}
-              {{joined}} joined the game.
-            {{/joined?}}
-
-            {{#started?}}
-              {{started}} wants to enter the temple.
-            {{/started?}}
-
-            {{#decision?}}
-              {{decision}} made their decision.
-            {{/decision?}}
-
-            {{#han}}
-              {{.}},
-            {{/han}}
-            {{#han?}}
-              are going Han.
-            {{/han?}}
-
-            {{#lando}}
-              {{.}},
-            {{/lando}}
-            {{#lando?}}
-              Lando-ing out.
-            {{/lando?}}
-
-            {{#speaker?}}
-              <span class="speaker">{{speaker}}:</span>
-            {{/speaker?}}
-            {{#message?}}
-              <span class="message">{{message}}:</span>
-            {{/message?}}
-
-            {{! TEMP -- NOT ALL UPDATES YET HANDLED }}
-            {{.}}
-          </div>
-        {{/updates}}
-
-        {{#player}}
+        {{#you}}
           <form action="chat" method="post">
-            <input type="hidden" name="id" value="{{id}}" />
             <input type="text" name="message" />
             <input type="submit" value="Chat" />
           </form>
-        {{/player}}
+        {{/you}}
+
+        {{#updates}}
+          <div>
+            {{timestamp}}:
+            {{#join}}{{.}} joined the game.{{/join}}
+            {{#start}}{{.}} wants to enter the temple.{{/start}}
+            {{#move}}{{.}} made their decision.{{/move}}
+            {{#han}}{{#players}}{{.}}, {{/players}} went han.{{/han}}
+            {{#lando}}{{#players}}{{.}}, {{/players}} landoed out, capturing {{value}} gold and leaving {{pot}} behind.{{/lando}}
+            {{#death}}{{#players}}{{.}}, {{/players}} all died of {{card}}.{{/death}}
+            {{#round}}Starting round {{.}}{{/round}}
+            {{#artifacts.in.play}}{{.}} in play.{{/artifacts.in.play}}
+            {{#card}}{{.}} on the table.{{/card}}
+            {{#chat}}
+              <span class="speaker">{{speaker}}:</span>
+              <span class="message">{{message}}:</span>
+            {{/chat}}
+          </div>
+        {{/updates}}
       </div>
 
     </div>
