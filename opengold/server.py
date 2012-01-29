@@ -12,28 +12,23 @@ from templating import load_mustache_env, MustacheRendering
 from brubeck.request_handling import Brubeck, WebMessageHandler
 
 
-def app(func):
+def unquote_game_name(func):
     """
-    This decorator will render the app template if this is a regular
-    request, or dump JSON if it is a JSON request.
+    Replace the decorated function's first argument with an unquoted
+    version of the game_name.
+    """
+    def wrapped(self, game_name, *args, **kwargs):
+        func(self, urllib2.unquote(game_name), *args, **kwargs)
+    return wrapped
 
-    The wrapped function should return a status code and an optional
-    message.
+def redirect_unless_json(func):
+    """
+    Redirect to the game unless the request was for JSON.
     """
 
     def wrapped(self, game_name, *args, **kwargs):
         game_name = urllib2.unquote(game_name)
-        status_code, msg = func(self, game_name, *args, **kwargs)
-
-        self.set_status(status_code)
-
-        if status_code == 200:
-            start_id = self.get_argument('id') or 0
-
-            info = game.info(self.db_conn, game_name, self.get_player(game_name), start_id)
-            context = info.next()
-        else:
-            context = { "error" : msg }
+        func(self, game_name, *args, **kwargs)
 
         if self.message.content_type == 'application/json':
             self.headers['Content-Type'] = 'application/json'
@@ -64,6 +59,7 @@ class IndexHandler(MustacheRendering):
         """
         List all games currently available.
         """
+
         context = {'names': game.list_names(self.db_conn)}
         if self.message.content_type == 'application/json':
             self.headers['Content-Type'] = 'application/json'
@@ -71,6 +67,18 @@ class IndexHandler(MustacheRendering):
             return self.render()
         else:
             return self.render_template('app', **context)
+
+
+class CreateGameHandler():
+
+    def get(self):
+        """
+        'Create' a game -- really just forward directly to a game page.
+        """
+        if self.get_argument('name'):
+            return self.redirect(self.get_argument('name') + '/')
+        else:
+            return self.redirect('/')
 
 
 class ForwardToGameHandler(WebMessageHandler):
@@ -83,20 +91,28 @@ class ForwardToGameHandler(WebMessageHandler):
 
 class GameHandler(MustacheRendering, PlayerMixin):
 
-    @app
+    @unquote_game_name
     def get(self, game_name):
         """
         Get information about happenings in game since id.  Will
         block until something happens after id.  ID defaults to 0.
         """
-        if game_name in game.list_names(self.db_conn):
-            return 200
+        start_id = self.get_argument('id') or 0
+
+        info = game.info(self.db_conn, game_name, self.get_player(game_name), start_id)
+        context = info.next()
+
+        if self.message.content_type == 'application/json':
+            self.headers['Content-Type'] = 'application/json'
+            self.set_body(json.dumps(context))
+            return self.render()
         else:
-            return 404, "That game does not exist."
+            return self.render_template('app', **context)
 
 class ChatHandler(MustacheRendering, PlayerMixin):
 
-    @app
+    @redirect_unless_json
+    @unquote_game_name
     def post(self, game_name):
         """
         Message other players in the game.
@@ -139,7 +155,8 @@ class JoinHandler(WebMessageHandler, PlayerMixin):
 
 class StartHandler(WebMessageHandler, PlayerMixin):
 
-    @app
+    @redirect_unless_json
+    @unquote_game_name
     def post(self, game_name):
         """
         Vote to enter temple/advance to next round.
@@ -154,7 +171,8 @@ class StartHandler(WebMessageHandler, PlayerMixin):
 
 class MoveHandler(WebMessageHandler, PlayerMixin):
 
-    @app
+    @redirect_unless_json
+    @unquote_game_name
     def post(self, game_name):
         """
         Looks like we got a Lando!!
@@ -173,6 +191,7 @@ config = {
     'mongrel2_pair': ('ipc://127.0.0.1:9999', 'ipc://127.0.0.1:9998'),
     'handler_tuples': [(r'^/$', IndexHandler),
                        (r'^/join$', JoinHandler),
+                       (r'^/create$', CreateGameHandler),
                        (r'^/(?P<game_name>[^/]+)$', ForwardToGameHandler),
                        (r'^/(?P<game_name>[^/]+)/$', GameHandler),
                        (r'^/(?P<game_name>[^/]+)/start$', StartHandler),

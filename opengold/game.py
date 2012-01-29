@@ -160,29 +160,28 @@ def _save_game_state(r, k):
     for player in players:
         r.rpush(path(k, PLAYERS, player[NAME], SAVED), json.dumps(player))
 
-    r.rpush(
-        path(k, SAVED),
-        json.dumps(
-            { PLAYERS:
-                  [ p if p[STATE] in [WON, LOST] else
-                    { NAME: p[NAME],
-                      STATE: MOVED if p[STATE] in [HAN, LANDO] else p[STATE] }
-                    for p in players],
-              TABLE:
-                  [get_card(idx).name for idx in r.lrange(path(k, TABLE), 0, -1)],
-              CAPTURED:
-                  [get_card(idx).name for idx in r.lrange(path(k, CAPTURED), 0, -1)],
-              POT:
-                  int(r.get(path(k, POT)) or 0),
-              ROUND:
-                  r.get(path(k, ROUND)),
-              ARTIFACTS_DESTROYED:
-                  [get_card(idx).name for idx in r.lrange(path(k, ARTIFACTS_DESTROYED), 0, -1)],
-              ARTIFACTS_SEEN_COUNT:
-                  int(r.get(path(k, ARTIFACTS_SEEN_COUNT)) or 0),
-              ARTIFACTS_IN_PLAY:
-                  [get_card(idx).name for idx in r.lrange(path(k, ARTIFACTS_IN_PLAY), 0, -1)]
-              }))
+    game_state = {
+        PLAYERS:
+            [ p if p[STATE] in [WON, LOST] else
+              { NAME: p[NAME],
+                STATE: MOVED if p[STATE] in [HAN, LANDO] else p[STATE] }
+              for p in players],
+        TABLE:
+            [get_card(idx).name for idx in r.lrange(path(k, TABLE), 0, -1)],
+        CAPTURED:
+            [get_card(idx).name for idx in r.lrange(path(k, CAPTURED), 0, -1)],
+        POT: int(r.get(path(k, POT)) or 0),
+        ARTIFACTS_DESTROYED:
+            [get_card(idx).name for idx in r.lrange(path(k, ARTIFACTS_DESTROYED), 0, -1)],
+        ARTIFACTS_SEEN_COUNT: int(r.get(path(k, ARTIFACTS_SEEN_COUNT)) or 0),
+        ARTIFACTS_IN_PLAY:
+            [get_card(idx).name for idx in r.lrange(path(k, ARTIFACTS_IN_PLAY), 0, -1)]
+        }
+
+    if r.exists(path(k, ROUND)):
+        game_state[ROUND] = r.get(path(k, ROUND))
+
+    r.rpush(path(k, SAVED), json.dumps(game_state))
 
 def _advance_game_state(r, k):
     """

@@ -26,9 +26,12 @@
       <div>No games currently available.</div>
       {{/names}}
 
-      <div class="join">
-        <form action="/
-      </div>
+      {{! CREATE NEW GAME }}
+      <form action="/create" method="get">
+        <label for="name">Name:</label>
+        <input type="text" name="name" />
+        <input type="submit" value="Create" />
+      </form>
     </div>
 
     <div id="game">
@@ -132,6 +135,19 @@
             {{/lost?}}
           </div>
         </div>
+      {{/you}}
+
+      {{! JOIN GAME IF NOT STARTED YET }}
+      {{^you}}
+      {{^state.round}}
+      <div class="join">
+        <form action="join" type="post">
+          <label for="name">Name:</label>
+          <input type="text" name="name" />
+          <input type="submit" value="Join" />
+        </form>
+      </div>
+      {{/state.round}}
       {{/you}}
 
       {{! UPDATES FOR CURRENT GAME }}
