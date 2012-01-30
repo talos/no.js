@@ -1,6 +1,7 @@
 .DS_Store
 *.pyc
 *.sqlite
+config.ini
 mongrel2.conf
 build/*
 run/*

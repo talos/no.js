@@ -1,17 +1,67 @@
 #!/usr/bin/env python
 
-import uuid
 import redis
 import json
 import sys
 import urllib2
+import uuid
+from ConfigParser import SafeConfigParser
 
 import game
 from templating import load_mustache_env, MustacheRendering
 
 from brubeck.request_handling import Brubeck, WebMessageHandler
 
+try:
+    import gevent as coro_timeout
+except ImportError:
+    import eventlet.timeout as coro_timeout
 
+###
+#
+# CONFIG
+#
+###
+if len(sys.argv) != 2:
+    print """
+Opengold server must be invoked with a single argument, telling it
+which mode from `config.ini` to use:
+
+python opengold/server.py <MODE>
+
+Look at `config.ini` for defined modes. Defaults are `production`,
+`staging`, and `test`."""
+    exit(1)
+
+mode = sys.argv[1]
+parser = SafeConfigParser()
+
+if not len(parser.read('config.ini')):
+    print "No config.ini file found in this directory.  Writing a config..."
+
+    for mode in ['production', 'staging', 'test']:
+        parser.add_section(mode)
+        parser.set(mode, 'db_name', 'opengold_%s' % mode)
+        parser.set(mode, 'cookie_secret', str(uuid.uuid4()))
+        parser.set(mode, 'longpoll_timeout', '20')
+
+    try:
+        conf = open('config.ini', 'w')
+        parser.write(conf)
+        conf.close()
+    except IOError:
+        print "Could not write config file to `config.ini`, exiting..."
+        exit(1)
+
+DB_NAME = parser.get(mode, 'db_name')
+COOKIE_SECRET = parser.get(mode, 'cookie_secret')
+LONGPOLL_TIMEOUT = int(parser.get(mode, 'longpoll_timeout'))
+
+###
+#
+# DECORATORS
+#
+###
 def unquote_game_name(func):
     """
     Replace the decorated function's first argument with an unquoted
@@ -49,7 +99,11 @@ def redirect_unless_json(func):
 
     return wrapped
 
-
+###
+#
+# MIXINS
+#
+###
 class PlayerMixin():
     """
     This mixin provides a get_player() method.  The passed game_name
@@ -62,7 +116,11 @@ class PlayerMixin():
         """
         return self.get_cookie(urllib2.quote(game_name, ''), None, self.application.cookie_secret)
 
-
+###
+#
+# HANDLERS
+#
+###
 class IndexHandler(MustacheRendering):
 
     def get(self):
@@ -96,7 +154,7 @@ class ForwardToGameHandler(WebMessageHandler):
         """
         Games should be accessed with a trailing slash.
         """
-        return self.redirect(game_name + '/')
+        return self.redirect('/%s/' % game_name)
 
 
 class GameHandler(MustacheRendering, PlayerMixin):
@@ -113,14 +171,20 @@ class GameHandler(MustacheRendering, PlayerMixin):
             start_id = -1
 
         info = game.info(self.db_conn, game_name, self.get_player(game_name), start_id)
-        context = info.next()
 
-        if self.message.content_type == 'application/json':
-            self.headers['Content-Type'] = 'application/json'
-            self.set_body(json.dumps(context))
-            return self.render()
+        context = coro_timeout.with_timeout(LONGPOLL_TIMEOUT, info.next, timeout_value=None)
+
+        if context:
+            if self.message.content_type == 'application/json':
+                self.headers['Content-Type'] = 'application/json'
+                self.set_body(json.dumps(context))
+                return self.render()
+            else:
+                return self.render_template('app', **context)
         else:
-            return self.render_template('app', **context)
+            # Prevent the browser's timeout page from firing up, but
+            # don't actually stress out with new content.
+            return self.redirect(self.message.path)
 
 
 class ChatHandler(MustacheRendering, PlayerMixin):
@@ -200,7 +264,11 @@ class MoveHandler(WebMessageHandler, PlayerMixin):
         else:
             self.set_status(400, 'You are not in this game')
 
-
+###
+#
+# BRUBECK RUNNER
+#
+###
 config = {
     'mongrel2_pair': ('ipc://127.0.0.1:9999', 'ipc://127.0.0.1:9998'),
     'handler_tuples': [(r'^/$', IndexHandler),
@@ -211,12 +279,10 @@ config = {
                        (r'^/(?P<game_name>[^/]+)/start$', StartHandler),
                        (r'^/(?P<game_name>[^/]+)/move$', MoveHandler),
                        (r'^/(?P<game_name>[^/]+)/chat$', ChatHandler)],
-    #'cookie_secret': str(uuid.uuid4()),  # this will kill all sessions/games if the server crashes!
-    'cookie_secret': 'insecure', # TODO, obvs
-    'db_conn': redis.StrictRedis(db=sys.argv[1] if len(sys.argv) > 1 else 'opengold'),
+    'cookie_secret': COOKIE_SECRET,
+    'db_conn': redis.StrictRedis(db=DB_NAME),
     'template_loader': load_mustache_env('templates')
 }
-
 
 opengold = Brubeck(**config)
 opengold.run()
