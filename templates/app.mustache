@@ -141,14 +141,13 @@
       <div class="updates">
         {{#you}}
           <form action="chat" method="post">
-            <input type="text" name="message" />
+            <input id="chat" type="text" name="message" />
             <input type="submit" value="Chat" />
           </form>
         {{/you}}
 
         {{#updates}}
           <div>
-            {{timestamp}}:
             {{#join}}{{.}} joined the game.{{/join}}
             {{#start}}{{.}} wants to enter the temple.{{/start}}
             {{#move}}{{.}} made their decision.{{/move}}
@@ -160,7 +159,7 @@
             {{#card}}{{.}} on the table.{{/card}}
             {{#chat}}
               <span class="speaker">{{speaker}}:</span>
-              <span class="message">{{message}}:</span>
+              <span class="message">{{message}}</span>
             {{/chat}}
           </div>
         {{/updates}}

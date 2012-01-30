@@ -6,3 +6,7 @@ div {
 form {
     display: inline-block;
 }
+
+input#chat {
+    width: 20em;
+}
