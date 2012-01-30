@@ -25,9 +25,6 @@
       {{#names}}
         <div><a href="/{{.}}/">{{.}}</a></div>
       {{/names}}
-      {{^names}}
-      <div>No games currently available.</div>
-      {{/names}}
 
       {{! CREATE NEW GAME }}
       <form action="/create" method="get">
