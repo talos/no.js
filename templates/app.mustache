@@ -27,11 +27,13 @@
       {{/names}}
 
       {{! CREATE NEW GAME }}
+      {{^state}}
       <form action="/create" method="get">
         <label for="name">Name:</label>
         <input type="text" name="name" />
         <input type="submit" value="Create" />
       </form>
+      {{/state}}
     </div>
 
     <div id="game">
