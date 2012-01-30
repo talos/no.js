@@ -1,7 +1,5 @@
 from brubeck.request_handling import WebMessageHandler
 
-import pystache # TODO this should be moved to the env_loader area
-
 ###
 ### Mustache
 ###
@@ -13,12 +11,27 @@ def load_mustache_env(template_dir, *args, **kwargs):
     anything until the caller is ready.
     """
     def loader():
-        from pystache import Loader
-        loader = Loader()
-        loader.template_path = template_dir or '.'
-        return loader
+        return MustacheEnvironment(template_dir)
 
     return loader
+
+
+class MustacheEnvironment(object):
+    """
+    An environment to render mustache templates.
+    """
+    def __init__(self, template_dirs):
+        import pystache
+
+        self.pystache = pystache
+        self.template_dirs = template_dirs
+
+    def render(self, template_file, context):
+        view = self.pystache.View(context=context)
+        view.template_name = template_file
+        view.template_path = self.template_dirs
+        return view.render()
+
 
 class MustacheRendering(WebMessageHandler):
     """
@@ -35,8 +48,8 @@ class MustacheRendering(WebMessageHandler):
         Renders payload as a mustache template
         """
         mustache_env = self.application.template_env
-        template = mustache_env.load_template(template_file)
-        body = pystache.render(template, context or {})
+        body = mustache_env.render(template_file, context or {})
+
         self.set_body(body, status_code=_status_code)
         return self.render()
 

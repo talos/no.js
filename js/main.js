@@ -2,43 +2,36 @@
 /*globals require */
 
 require([
-    'opengold/request',
-    'text!templates/join.mustache',
-    'text!templates/start.mustache',
-    'text!templates/in_progress.mustache',
-    'text!templates/finished.mustache',
+    'text!../templates/game.mustache',
     'lib/jquery',
-    'lib/mustache'
-], function (request, join, start, in_progress, finished, $, mustache) {
+    'lib/mustache',
+    'lib/json2'
+], function (game, $, mustache, json) {
     "use strict";
-    var $el = $('#opengold'),
-        game_name = window.location.pathname.slice(1);
+    var $game = $('#game'),
+
+        /**
+         * Update the page for given id.  This polls, immediately
+         * making another request for the next ID upon completion.
+         *
+         * @param id The ID to request.
+         */
+        update = function (id) {
+            var data = id ? { id : id } : {};
+
+            $.getJSON(window.location.pathname, data)
+                .done(function (resp, status, doc) {
+                    var context = json.parse(doc.responseText);
+                    $game.html(mustache.render(game, context));
+                    update(context.id);
+                }).fail(function (resp) {
+                    console.log(resp);
+                });
+        };
 
     // absorb form hits
     $('form').submit(function () {
         console.log(this);
         return false;
-    });
-
-    request.status(game_name, function (status) {
-        var template;
-        switch (status.type) {
-        case 'start':
-            template = start;
-            break;
-        case 'join':
-            template = join;
-            break;
-        case 'in_progress':
-            template = in_progress;
-            break;
-        case 'finished':
-            template = finished;
-            break;
-        }
-        $el.html(mustache.render(template, status));
-
-        console.log(this);
-        request.poll(game_name, this);
     });
 });

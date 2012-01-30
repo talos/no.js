@@ -133,7 +133,7 @@ class IndexHandler(MustacheRendering):
             self.set_body(json.dumps(context))
             return self.render()
         else:
-            return self.render_template('app', **context)
+            return self.render_template('main', **context)
 
 
 class CreateGameHandler(WebMessageHandler):
@@ -180,7 +180,7 @@ class GameHandler(MustacheRendering, PlayerMixin):
                 self.set_body(json.dumps(context))
                 return self.render()
             else:
-                return self.render_template('app', **context)
+                return self.render_template('main', **context)
         else:
             # Prevent the browser's timeout page from firing up, but
             # don't actually stress out with new content.
@@ -281,7 +281,7 @@ config = {
                        (r'^/(?P<game_name>[^/]+)/chat$', ChatHandler)],
     'cookie_secret': COOKIE_SECRET,
     'db_conn': redis.StrictRedis(db=DB_NAME),
-    'template_loader': load_mustache_env('templates')
+    'template_loader': load_mustache_env('./templates')
 }
 
 opengold = Brubeck(**config)
