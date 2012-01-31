@@ -19,6 +19,8 @@ require([
         update = function (id) {
             var data = id ? { id : id } : {};
 
+            console.log(id);
+
             $.getJSON(window.location.pathname, data)
                 .done(function (resp, status, doc) {
                     var context = json.parse(doc.responseText);
@@ -31,9 +33,18 @@ require([
 
     update(0);
 
-    // absorb form hits
+    // absorb POST form hits
     $('form').submit(function () {
-        console.log(this);
-        return false;
+        var $form = $(this);
+
+        if ($form.attr('method') === 'post') {
+            $.ajax({ url: $form.attr('action'),
+                     dataType: 'json',
+                     type: 'POST',
+                     data: $form.serialize() });
+            return false;
+        } else {
+            return true;
+        }
     });
 });
