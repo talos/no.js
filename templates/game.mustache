@@ -20,7 +20,12 @@
       {{/captured}}
     </div>
     <div class="pot">Pot: {{pot}}</div>
-    <div class="round">Round: {{round}}</div>
+    {{#round}}
+      <div class="round">Round: {{.}}</div>
+    {{/round}}
+    {{^round}}
+    <div class="round">Game has not yet started.</div>
+    {{/round}}
     <div class="artifacts_destroyed">
       Artifacts destroyed:
       {{#artifacts.destroyed}}
@@ -59,26 +64,18 @@
           <input type="submit" value="Start Game" />
         </form>
       {{/joined}}
-
-      {{#undecided}}
-
-        {{#state.round}}
-          Wither thou?
-          <form action="move" method="post">
-            <input type="hidden" name="move" value="han">
-            <input type="submit" value="Han" />
-          </form>
-          <form action="move" method="post">
-            <input type="hidden" name="move" value="lando">
-            <input type="submit" value="Lando" />
-          </form>
-        {{/state.round}}
-        {{^state.round}}
-        Game has not yet started.
-        {{/state.round}}
-      {{/undecided}}
-
       {{#camp}}You're safe at camp.{{/camp}}
+      {{#undecided}}
+        Wither thou?
+        <form action="move" method="post">
+          <input type="hidden" name="move" value="han">
+          <input type="submit" value="Han" />
+        </form>
+        <form action="move" method="post">
+          <input type="hidden" name="move" value="lando">
+          <input type="submit" value="Lando" />
+        </form>
+      {{/undecided}}
       {{#han}}You're going Han.{{/han}}
       {{#lando}}Lando-ing out.{{/lando}}
       {{#won}}Congrats dude, ya won.{{/won}}
@@ -113,7 +110,7 @@
 
   {{#updates}}
     <div>
-      {{#more_players}}Need more players to start game.{{/more_players}}
+      {{#more_players}}Waiting for more players.{{/more_players}}
       {{#join}}{{.}} joined the game.{{/join}}
       {{#start}}{{.}} wants to start venturing.{{/start}}
       {{#move}}{{.}} made their move.{{/move}}
