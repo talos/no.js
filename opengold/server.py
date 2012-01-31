@@ -147,9 +147,8 @@ class GameListHandler(MustacheRendering):
         games = game.games(self.db_conn, start_id)
 
         try:
-            game_list = coro_timeout.with_timeout(LONGPOLL_TIMEOUT, games.next)
+            context = coro_timeout.with_timeout(LONGPOLL_TIMEOUT, games.next)
 
-            context = {'games': game_list}
             if is_json_request(self.message):
                 self.headers['Content-Type'] = 'application/json'
                 self.set_body(json.dumps(context))
