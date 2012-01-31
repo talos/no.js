@@ -12,27 +12,33 @@ import urllib2
 
 from helpers import TestOpengoldServer, HOST, unittest
 
-JSON_HEADER = {'content-type': 'application/json'}
+JSON_HEADER = {'accept': 'application/json, text/javascript'}
 
 class TestServerJSON(TestOpengoldServer):
-
     """
     Test JSON methods on the server.  Does not hit the template side of things.
     """
+
+    def json_session(self):
+        """
+        Produce a JSON-only session.
+        """
+        return requests.session(headers=JSON_HEADER)
+
     def test_join_game(self):
         """
         Jack and Jill join a hill...
         """
-        jack = requests.session()
-        jill = requests.session()
+        jack = self.json_session()
+        jill = self.json_session()
 
         self.assertEquals(200, jack.post(HOST + '/hill/join',
                                          data={'player':'jack'}).status_code)
         self.assertEquals(200, jill.post(HOST + '/hill/join',
                                          data={'player':'jill'}).status_code)
 
-        jack_info = json.loads(jack.get(HOST + '/hill', headers=JSON_HEADER).content)
-        jill_info = json.loads(jill.get(HOST + '/hill', headers=JSON_HEADER).content)
+        jack_info = json.loads(jack.get(HOST + '/hill').content)
+        jill_info = json.loads(jill.get(HOST + '/hill').content)
         expected_players = [{'name': 'jack',
                              'state': 'joined'},
                            {'name': 'jill',
@@ -43,47 +49,50 @@ class TestServerJSON(TestOpengoldServer):
         self.assertEquals('jill', jill_info['you']['name'])
 
     def test_join_game_needs_name(self):
-        s = requests.session()
+        s = self.json_session()
 
         self.assertEquals(400, s.post(HOST + '/game/join').status_code)
 
     def test_join_game_only_once(self):
-        s = requests.session()
+        s = self.json_session()
 
         s.post(HOST + '/somewhere/join', data={'player':'sir clicksalot'})
         self.assertEquals(400, s.post(HOST + '/somewhere/join',
                                       data={'player':'sir clicksalot'}).status_code)
 
     def test_join_game_with_many_names_fails(self):
-        s = requests.session()
+        s = self.json_session()
 
         s.post(HOST + '/somewhere/join', data={'player':'joseph'})
         self.assertEquals(400, s.post(HOST + '/somewhere/join',
                                       data={'player':'mary'}).status_code)
 
     def test_join_multiple_games(self):
-        s = requests.session()
+        s = self.json_session()
 
         self.assertEquals(200, s.post(HOST + '/here/join', data={'player':'paul'}).status_code)
         self.assertEquals(200, s.post(HOST + '/there/join', data={'player':'john'}).status_code)
         self.assertEquals(200, s.post(HOST + '/and everywhere/join', data={'player':'ringo'}).status_code)
 
-    def test_game_list(self):
-        s = requests.session()
+    def test_game_list_names_most_recent(self):
+        """
+        Most recent games should be first.
+        """
+        s = self.json_session()
 
-        s.post(HOST + '/sexy sadie/join', data={'player':'john'})
         s.post(HOST + '/blackbird/join', data={'player':'paul'})
         s.post(HOST + '/yellow submarine/join', data={'player':'ringo'})
+        s.post(HOST + '/sexy sadie/join', data={'player':'john'})
 
-        self.assertEquals({'names': ['blackbird', 'sexy sadie', 'yellow submarine']},
-                          json.loads(s.get(HOST + '/', headers=JSON_HEADER).content))
+        self.assertEquals(['sexy sadie', 'yellow submarine', 'blackbird'],
+                          [g['name'] for g in json.loads(s.get(HOST + '/').content)['games']])
 
-    def test_xss(self):
+    def test_xss_names(self):
         """
-        Totally arbitrary text is allowed in titles.  Filtering is
-        done using .text() later on from the JSON object.
+        Totally arbitrary text is allowed in game names.  Filtering is
+        done through templating.
         """
-        s = requests.session()
+        s = self.json_session()
 
         xss = "<script type='text/javascript'>document.write('bullshit')</script>"
         xss_quoted = urllib2.quote(xss, '')
@@ -92,33 +101,31 @@ class TestServerJSON(TestOpengoldServer):
             200,
             s.post(HOST + '/%s/join' % xss_quoted, data={'player':'bastard'}).status_code)
 
-        self.assertEquals(
-            {'names': [xss]},
-            json.loads(s.get(HOST + '/', headers=JSON_HEADER).content))
+        self.assertEquals(xss, json.loads(s.get(HOST + '/').content)['games'][0]['name'])
 
     def test_unicode_game_name(self):
         """
         Hehe.
         """
-        s = requests.session()
+        s = self.json_session()
 
         self.assertEquals(
             200,
             s.post(HOST + u"/☃/join", data={'player':'snowman'}).status_code)
 
         self.assertEquals({'names': [u"☃"]},
-                          json.loads(s.get(HOST + '/', headers=JSON_HEADER).content))
+                          json.loads(s.get(HOST + '/').content))
 
     def test_unicode_player_name(self):
         """
         Sno man ftw
         """
-        s = requests.session()
+        s = self.json_session()
 
         self.assertEquals(
             200,
             s.post(HOST + "/iceberg/join", data={'player':u"☃"}).status_code)
-        resp = s.get(HOST + "/iceberg", headers=JSON_HEADER).content
+        resp = s.get(HOST + "/iceberg").content
         self.assertEquals(u"☃", json.loads(resp)['you']['name'])
 
     def test_long_poll(self):
@@ -126,15 +133,12 @@ class TestServerJSON(TestOpengoldServer):
         When nothing has happened since an ID, JSON calls for info after a
         specific ID should hang.
         """
-        s = requests.session()
+        s = self.json_session()
 
         s.post(HOST + "/game/join", data={"player":"django"})
-        last_id = json.loads(s.get(HOST + "/game", headers=JSON_HEADER).content)['id']
+        last_id = json.loads(s.get(HOST + "/game").content)['id']
 
-        import pdb
-        pdb.set_trace()
-
-        poll = async.get(HOST + "/game", headers=JSON_HEADER, data={"id":last_id})
+        poll = async.get(HOST + "/game", data={"id":last_id})
 
     # def test_new_game(self):
     #     self.assertEquals({

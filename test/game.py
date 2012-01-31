@@ -20,13 +20,6 @@ class TestGame(unittest.TestCase):
         #self.r.flushdb()
         pass
 
-    def test_multiple_game_names(self):
-        game.join(self.r, 'the hills', 'foo')
-        game.join(self.r, 'the valleys', 'bar')
-
-        self.assertEquals(['the hills', 'the valleys'],
-                          game.list_names(self.r))
-
     def test_join(self):
         self.assertTrue(game.join(self.r, 'game', 'dave'))
         info = game.info(self.r, 'game', 'dave').next()
@@ -56,7 +49,7 @@ class TestGame(unittest.TestCase):
         game.join(self.r, 'game', 'hermit')
         game.start(self.r, 'game', 'hermit')
         info = game.info(self.r, 'game').next()
-        self.assertIsNone(info['state']['round'])
+        self.assertNotIn('round', info['state'])
 
     def test_all_must_approve_start(self):
         game.join(self.r, 'game', 'alpha')
@@ -66,7 +59,7 @@ class TestGame(unittest.TestCase):
         game.start(self.r, 'game', 'beta')
 
         info = game.info(self.r, 'game').next()
-        self.assertIsNone(info['state']['round'])
+        self.assertNotIn('round', info['state'])
 
     def test_start_game(self):
         game.join(self.r, 'game', 'alpha')
@@ -82,13 +75,26 @@ class TestGame(unittest.TestCase):
                            { 'name': 'beta',
                              'state': 'undecided'}], info['state']['players'])
 
+    def test_updates_most_recent_first(self):
+        """
+        The first update should be the most recent, then they work backwards.
+        """
+        game.join(self.r, 'game', 'first')
+        game.join(self.r, 'game', 'second')
+        game.join(self.r, 'game', 'third')
+
+        info = game.info(self.r, 'game').next()
+        self.assertDictContainsSubset({'join': 'third'}, info['updates'].pop(0))
+        self.assertDictContainsSubset({'join': 'second'}, info['updates'].pop(0))
+        self.assertDictContainsSubset({'join': 'first'}, info['updates'].pop(0))
+
     def test_chat(self):
         game.join(self.r, 'game', 'loner')
         self.assertTrue(game.chat(self.r, 'game', 'loner', 'just me myself and i'))
         info = game.info(self.r, 'game').next()
         self.assertDictContainsSubset({'chat': {
                     'speaker': 'loner',
-                    'message': 'just me myself and i'}}, info['updates'].pop())
+                    'message': 'just me myself and i'}}, info['updates'].pop(0))
 
     def test_superuser_chat(self):
         game.join(self.r, 'game', 'betty')
@@ -104,13 +110,13 @@ class TestGame(unittest.TestCase):
 
         self.assertEquals({ 'speaker': 'martha',
                             'message': 'no clue'},
-                          info['updates'].pop()['chat'])
+                          info['updates'].pop(0)['chat'])
         self.assertEquals({ 'speaker': 'betty',
                             'message': "who's that dude?"},
-                          info['updates'].pop()['chat'])
+                          info['updates'].pop(0)['chat'])
         self.assertEquals({ 'speaker': 'hero',
                             'message': 'what up gals'},
-                          info['updates'].pop()['chat'])
+                          info['updates'].pop(0)['chat'])
 
     def test_no_move_without_start(self):
         game.join(self.r, 'game', 'max')
@@ -205,8 +211,66 @@ class TestGame(unittest.TestCase):
     #             'artifacts.captured': [],
     #             'state': 'undecided' }, bar['you'])
 
-    def test_blocking_info(self):
+    def test_no_games(self):
+        """
+        .games() should initially return an empty array if there were no games.
+        """
+        games = game.games(self.r)
+        self.assertEquals([], games.next())
+
+    def test_games_advances(self):
+        """
+        .games() should return a generator that only advances when a
+        new game is made.
+        """
+        games = game.games(self.r)
+        games.next()  # pull out the empty array
+
+        t = Thread(target=games.next)
+        t.start()
+
+        self.assertTrue(t.is_alive())
+        time.sleep(0.5)
+        self.assertTrue(t.is_alive())
+
+        game.join(self.r, 'unblocked', 'some dude') # create a game
+
+        t.join(1)
+        self.assertFalse(t.is_alive())
+
+    def test_games_names(self):
+        game.join(self.r, 'the hills', 'foo')
+        game.join(self.r, 'the valleys', 'bar')
+
+        games = game.games(self.r)
+
+        self.assertItemsEqual(['the hills', 'the valleys'],
+                          [g['name'] for g in games.next()])
+
+    def test_games_in_reverse_order(self):
+        """
+        Most recent games come first.
+        """
+        game.join(self.r, 'thesis', 'foo')
+        game.join(self.r, 'antithesis', 'bar')
+        game.join(self.r, 'synthesis', 'baz')
+
+        games = game.games(self.r)
+
+        self.assertEqual(['synthesis', 'antithesis', 'thesis'],
+                          [g['name'] for g in games.next()])
+
+    def test_info_not_exists(self):
+        info = game.info(self.r, 'nonexistent').next()
+        self.assertEquals(
+            { 'state': { 'not_exists': True },
+              'id': 0 },
+            info)
+
+    def test_info_advances(self):
         info = game.info(self.r, 'blocked')
+        info.next()  # pull out the not_exists info
+
         t = Thread(target=info.next)
         t.start()
 
@@ -219,7 +283,7 @@ class TestGame(unittest.TestCase):
         t.join(1)
         self.assertFalse(t.is_alive())
 
-    def test_blocking_info_via_id(self):
+    def test_info_advances_beyond_id(self):
         info = game.info(self.r, 'game')
         game.join(self.r, 'game', 'thing one')
         t_all_info = Thread(target=info.next)

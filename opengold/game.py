@@ -39,7 +39,8 @@ NOT_EXISTS = 'not_exists'
 # Redis keys
 #
 ###
-GAMES = 'games' # set
+GAMES = 'games' # sorted set
+GAME_ID = 'game_id' # integer
 
 UPDATE_ID = 'id' # integer
 SAVED = 'saved' # list
@@ -192,7 +193,7 @@ def _advance_game_state(r, k):
 
     ALL LOGIZ HURR
     """
-    if not r.sismember(GAMES, k):
+    if not r.zscore(GAMES, k):
         _initialize_game(r, k)
 
     players = _get_players(r, k)
@@ -221,10 +222,17 @@ def _initialize_game(r, k):
     """
     Create deck, artifacts etc.
     """
-    assert r.sadd(GAMES, k) == 1
+    game_id = r.incr(GAME_ID)
+    assert r.zadd(GAMES, game_id, k) == 1
+
+    r.delete(path(k, DECK))
+    r.delete(path(k, ARTIFACTS_UNSEEN))
+
     r.sadd(path(k, DECK), *TREASURES)
     r.sadd(path(k, DECK), *HAZARDS)
     r.sadd(path(k, ARTIFACTS_UNSEEN), *ARTIFACTS)
+
+    r.publish(GAMES, game_id)
 
 def _next_round(r, k, players):
     """
@@ -427,10 +435,13 @@ def chat(r, k, speaker, message, superuser=False):
     else:
         return False
 
-def info(r, k, player=None, start_id=-1, num_updates=10):
+def info(r, k, player=None, start_info_id=-1, num_updates=10):
     """
     Returns a generator that will return info objects newer than the
-    last one it generated, starting with start_id.
+    last one it generated, starting with start_info_id.
+
+    If the game doesn't exist, will initially yield a notice that the
+    game doesn't exist.
     """
     pubsub = r.pubsub()
     pubsub.subscribe(k)
@@ -440,11 +451,12 @@ def info(r, k, player=None, start_id=-1, num_updates=10):
     while True:
         cur_id = int(r.get(path(k, UPDATE_ID)) or -1)
         # Game doesn't exist yet.
-        if cur_id == -1 and start_id == -1:
+        if cur_id == -1 and start_info_id == -1:
             yield { STATE: { NOT_EXISTS: True },
                     UPDATE_ID: 0 }
+            start_info_id = 0
         # Block waiting for an update to generate something newer
-        elif start_id >= cur_id:
+        elif start_info_id >= cur_id:
             listener.next()
         else:
             # Components are already in JSON.
@@ -461,12 +473,37 @@ def info(r, k, player=None, start_id=-1, num_updates=10):
                 if saved_player:
                     info[YOU] = json.loads(saved_player)
 
-            start_id = cur_id
+            start_info_id = cur_id
             yield info
 
-def list_names(r):
+def games(r, start_game_id=-1):
     """
-    List all game names. GARBAGE IN GARBAGE OUT! Make sure to sanitize
-    output as appropriate.
+    Returns a generator that will return a list of all games every
+    time a new one is created, starting with the specified
+    start_game_id.  Games are ordered most recent first.
+
+    GARBAGE IN GARBAGE OUT for names! Make sure to sanitize output as
+    appropriate.
     """
-    return sorted(list(r.smembers(GAMES)))
+    pubsub = r.pubsub()
+    pubsub.subscribe(GAMES)
+
+    listener = pubsub.listen()
+
+    while True:
+        cur_id = int(r.get(GAME_ID) or -1)
+        # no games t'all
+        if cur_id == -1 and start_game_id == -1:
+            yield []
+            start_game_id = 0
+        # Block waiting for an update
+        elif start_game_id >= cur_id:
+            listener.next()
+        else:
+            yield [{
+                    NAME: k,
+                    ROUND: r.get(path(k, ROUND)),
+                    PLAYERS: r.scard(path(k, PLAYERS))
+                    }
+                for k in r.zrevrange(GAMES, 0, -1)]
+            start_game_id = cur_id

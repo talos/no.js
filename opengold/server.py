@@ -74,25 +74,23 @@ def unquote_game_name(func):
 def redirect_unless_json(func):
     """
     If this request was for json, this returns a response with the
-    specified object.  Otherwise, it redirects to the specified game
-    name.  If the wrapped function set a non-200 status, that will be
-    returned as-is.
+    specified object.  Otherwise, it redirects to the current
+    location.  If the wrapped function set a non-200 status, that will
+    be returned as-is.
     """
     def wrapped(self, game_name, *args, **kwargs):
         func(self, game_name, *args, **kwargs)
 
         if self.status_code == 200:
-            if self.message.content_type == 'application/json':
+            if is_json_request(self.message):
                 self.headers['Content-Type'] = 'application/json'
                 self.set_body(json.dumps(self.body))
                 return self.render()
             else:
                 # Brubeck's self.redirect() clears cookies, so we can't use it.
-                url = '/%s/' % game_name
                 self._finished = True
-                msg = 'Page has moved to %s' % url
-                self.set_status(302, status_msg=msg)
-                self.headers['Location'] = '%s' % url
+                self.set_status(302)
+                self.headers['Location'] = self.message.path
                 return self.render()
         else:
             return self.render()
@@ -116,24 +114,49 @@ class PlayerMixin():
         """
         return self.get_cookie(urllib2.quote(game_name, ''), None, self.application.cookie_secret)
 
+
+###
+#
+# HELPERS
+#
+###
+def is_json_request(message):
+    """
+    True if this request was for JSON, False otherwise.
+    """
+    return message.headers.get('accept').rfind('application/json') > -1
+
+
 ###
 #
 # HANDLERS
 #
 ###
-class IndexHandler(MustacheRendering):
+class GameListHandler(MustacheRendering):
 
     def get(self):
         """
-        List all games currently available.
+        List all games currently available.  Only returns if there is
+        a game with an ID greater than the provided ID.
         """
-        context = {'names': game.list_names(self.db_conn)}
-        if self.message.content_type == 'application/json':
-            self.headers['Content-Type'] = 'application/json'
-            self.set_body(json.dumps(context))
-            return self.render()
+        try:
+            start_id = int(self.get_argument('id') or -1)
+        except ValueError:
+            start_id = -1
+
+        games = game.games(self.db_conn, start_id)
+        game_list = coro_timeout.with_timeout(LONGPOLL_TIMEOUT, games.next, timeout_value=None)
+
+        if game_list:
+            context = {'games': game_list}
+            if is_json_request(self.message):
+                self.headers['Content-Type'] = 'application/json'
+                self.set_body(json.dumps(context))
+                return self.render()
+            else:
+                return self.render_template('main', **context)
         else:
-            return self.render_template('main', **context)
+            return self.redirect(self.message.path)
 
 
 class CreateGameHandler(WebMessageHandler):
@@ -162,8 +185,9 @@ class GameHandler(MustacheRendering, PlayerMixin):
     @unquote_game_name
     def get(self, game_name):
         """
-        Get information about happenings in game since id.  Will
-        block until something happens after id.
+        Get information about happenings in game since optional id
+        argument.  Will hang until something happens after id.  If
+        nothing happens for long enough, it will redirect to itself.
         """
         try:
             start_id = int(self.get_argument('id') or -1)
@@ -171,11 +195,10 @@ class GameHandler(MustacheRendering, PlayerMixin):
             start_id = -1
 
         info = game.info(self.db_conn, game_name, self.get_player(game_name), start_id)
-
         context = coro_timeout.with_timeout(LONGPOLL_TIMEOUT, info.next, timeout_value=None)
 
         if context:
-            if self.message.content_type == 'application/json':
+            if is_json_request(self.message):
                 self.headers['Content-Type'] = 'application/json'
                 self.set_body(json.dumps(context))
                 return self.render()
@@ -271,7 +294,7 @@ class MoveHandler(WebMessageHandler, PlayerMixin):
 ###
 config = {
     'mongrel2_pair': ('ipc://127.0.0.1:9999', 'ipc://127.0.0.1:9998'),
-    'handler_tuples': [(r'^/$', IndexHandler),
+    'handler_tuples': [(r'^/$', GameListHandler),
                        (r'^/create$', CreateGameHandler),
                        (r'^/(?P<game_name>[^/]+)$', ForwardToGameHandler),
                        (r'^/(?P<game_name>[^/]+)/$', GameHandler),

@@ -4,7 +4,7 @@
 require([
     'text!../templates/game.mustache',
     'lib/jquery',
-    'lib/mustache',
+    'lib/requirejs.mustache',
     'lib/json2'
 ], function (game, $, mustache, json) {
     "use strict";
@@ -28,6 +28,8 @@ require([
                     console.log(resp);
                 });
         };
+
+    update(0);
 
     // absorb form hits
     $('form').submit(function () {
