@@ -492,6 +492,7 @@ def games(r, start_game_id=-1):
 
     while True:
         cur_id = int(r.get(GAME_ID) or -1)
+
         # no games t'all
         if cur_id == -1 and start_game_id == -1:
             yield []

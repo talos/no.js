@@ -115,8 +115,8 @@ class TestOpengoldServer(unittest.TestCase):
                                       )
         cls.app = subprocess.Popen('python opengold/server.py test',
                                    shell=True,
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE
+                                   # stdout=subprocess.PIPE,
+                                   # stderr=subprocess.PIPE
                                    )
 
         LOG.info("Waiting for server to start")

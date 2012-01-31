@@ -13,7 +13,7 @@ from templating import load_mustache_env, MustacheRendering
 from brubeck.request_handling import Brubeck, WebMessageHandler
 
 try:
-    import gevent as coro_timeout
+    import gevent.timeout as coro_timeout
 except ImportError:
     import eventlet.timeout as coro_timeout
 
@@ -145,9 +145,10 @@ class GameListHandler(MustacheRendering):
             start_id = -1
 
         games = game.games(self.db_conn, start_id)
-        game_list = coro_timeout.with_timeout(LONGPOLL_TIMEOUT, games.next, timeout_value=None)
 
-        if game_list:
+        try:
+            game_list = coro_timeout.with_timeout(LONGPOLL_TIMEOUT, games.next)
+
             context = {'games': game_list}
             if is_json_request(self.message):
                 self.headers['Content-Type'] = 'application/json'
@@ -155,7 +156,7 @@ class GameListHandler(MustacheRendering):
                 return self.render()
             else:
                 return self.render_template('main', **context)
-        else:
+        except coro_timeout.Timeout:
             return self.redirect(self.message.path)
 
 
@@ -195,16 +196,16 @@ class GameHandler(MustacheRendering, PlayerMixin):
             start_id = -1
 
         info = game.info(self.db_conn, game_name, self.get_player(game_name), start_id)
-        context = coro_timeout.with_timeout(LONGPOLL_TIMEOUT, info.next, timeout_value=None)
 
-        if context:
+        try:
+            context = coro_timeout.with_timeout(LONGPOLL_TIMEOUT, info.next)
             if is_json_request(self.message):
                 self.headers['Content-Type'] = 'application/json'
                 self.set_body(json.dumps(context))
                 return self.render()
             else:
                 return self.render_template('main', **context)
-        else:
+        except coro_timeout.Timeout:
             # Prevent the browser's timeout page from firing up, but
             # don't actually stress out with new content.
             return self.redirect(self.message.path)
