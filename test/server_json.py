@@ -7,6 +7,7 @@ of test class.
 
 import requests
 from requests import async
+import gevent
 import json
 import urllib2
 
@@ -128,17 +129,64 @@ class TestServerJSON(TestOpengoldServer):
         resp = s.get(HOST + "/iceberg").content
         self.assertEquals(u"☃", json.loads(resp)['you']['name'])
 
-    def test_long_poll(self):
+    def test_long_poll_game_list(self):
+        """
+        When no new games have been made after an ID, then calls for
+        the list of games should hang.
+        """
+        s = self.json_session()
+
+        resp = s.get(HOST + '/')
+        last_id = json.loads(resp.content)['id']
+
+        poll = async.send(async.get(HOST + "/", params={"id":last_id}))
+        gevent.sleep(0.5)
+        self.assertFalse(poll.successful())
+
+        s.post(HOST + '/alpha/join', data={'player':'honcho'})
+        poll.join()
+        self.assertTrue(poll.successful())
+
+    def test_long_poll_nonexistent_game(self):
+        """
+        Request for info about nonexistent game using the ID initially
+        returned should hang after initial response, until something
+        happens.
+        """
+        s = self.json_session()
+
+        initial_id = json.loads(requests.get(HOST + '/beta').content)['id']
+        poll = async.send(async.get(HOST + "/beta", params={"id":initial_id}))
+
+        gevent.sleep(0.5)
+        self.assertFalse(poll.successful())
+
+        s.post(HOST + "/beta/join", data={"player":"django"})
+        poll.join()
+        self.assertTrue(poll.successful())
+
+    def test_long_poll_existing_game(self):
         """
         When nothing has happened since an ID, JSON calls for info after a
         specific ID should hang.
         """
         s = self.json_session()
 
-        s.post(HOST + "/game/join", data={"player":"django"})
-        last_id = json.loads(s.get(HOST + "/game").content)['id']
+        s.post(HOST + "/gaga/join", data={"player":"django"})
+        last_id = json.loads(s.get(HOST + "/gaga").content)['id']
 
-        poll = async.get(HOST + "/game", data={"id":last_id})
+        poll = async.send(async.get(HOST + "/gaga", params={"id":last_id}))
+
+        # TODO sleeping before this causes immediate resolution, but
+        # actually stopping with a set_trace properly delays
+        # resolution. ???
+        # gevent.sleep(0.5)
+        self.assertFalse(poll.successful())
+
+        s.post(HOST + '/gaga/start')
+        poll.join()
+        self.assertTrue(poll.successful())
+
 
     # def test_new_game(self):
     #     self.assertEquals({

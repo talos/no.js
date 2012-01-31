@@ -139,12 +139,15 @@ class GameListHandler(MustacheRendering):
         List all games currently available.  Only returns if there is
         a game with an ID greater than the provided ID.
         """
-        try:
-            start_id = int(self.get_argument('id') or -1)
-        except ValueError:
-            start_id = -1
 
-        games = game.games(self.db_conn, start_id)
+        opt_id = []
+        try:
+            if self.get_argument('id'):
+                opt_id.append(int(self.get_argument('id')))
+        except ValueError:
+            pass
+
+        games = game.games(self.db_conn, *opt_id)
 
         try:
             context = coro_timeout.with_timeout(LONGPOLL_TIMEOUT, games.next)
@@ -189,12 +192,14 @@ class GameHandler(MustacheRendering, PlayerMixin):
         argument.  Will hang until something happens after id.  If
         nothing happens for long enough, it will redirect to itself.
         """
+        opt_id = []
         try:
-            start_id = int(self.get_argument('id') or -1)
+            if self.get_argument('id'):
+                opt_id.append(int(self.get_argument('id')))
         except ValueError:
-            start_id = -1
+            pass
 
-        info = game.info(self.db_conn, game_name, self.get_player(game_name), start_id)
+        info = game.info(self.db_conn, game_name, self.get_player(game_name), *opt_id)
 
         try:
             context = coro_timeout.with_timeout(LONGPOLL_TIMEOUT, info.next)
