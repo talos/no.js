@@ -25,6 +25,7 @@ MESSAGE = 'message'
 TIMESTAMP = 'timestamp'
 YOU = 'you'
 NAME = 'name'
+MORE_PLAYERS = "more_players"
 
 VALUE = 'value'
 CARD = 'card'
@@ -105,13 +106,10 @@ def advances_game_state(func):
 
                     try:
                         if func(r, k, player, *args):
-                            _advance_game_state(r, k)
-                            #  we save game state before saving an
-                            #  update; that way, there is always an
-                            #  update being published after a game
-                            #  state is saved.
-                            _save_game_state(r, k)
                             _save_update(r, k, { func.func_name: player })
+                            _advance_game_state(r, k)
+                            _save_game_state(r, k)
+                            _publish_info(r, k)
                             return True
                         else:
                             return False
@@ -141,6 +139,12 @@ def _get_players(r, k):
 
     return players
 
+def _publish_info(r, k):
+    """
+    Notify .info() that there is new information.
+    """
+    r.publish(k, r.get(path(k, UPDATE_ID)))
+
 def _save_update(r, k, update):
     """
     Save an update as json.  This should not be called externally.
@@ -153,7 +157,6 @@ def _save_update(r, k, update):
     update[TIMESTAMP] = timestamp()
     update[UPDATE_ID] = update_id
     r.lpush(path(k, UPDATES), json.dumps(update))
-    r.publish(k, update_id)
 
 def _save_game_state(r, k):
     """
@@ -198,7 +201,8 @@ def _advance_game_state(r, k):
 
     players = _get_players(r, k)
     if len(players) < 2:
-        pass
+        if players[0][STATE] == CAMP:
+            _save_update(r, k, {MORE_PLAYERS: True})
     elif r.get(path(k, ROUND)) == DONE:
         pass
     elif any(p[STATE] == JOINED for p in players):

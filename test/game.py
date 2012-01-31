@@ -51,6 +51,13 @@ class TestGame(unittest.TestCase):
         info = game.info(self.r, 'game').next()
         self.assertNotIn('round', info['state'])
 
+    def test_single_player_starting_gets_more_players_update(self):
+        game.join(self.r, 'game', 'hermit')
+        game.start(self.r, 'game', 'hermit')
+        info = game.info(self.r, 'game').next()
+
+        self.assertDictContainsSubset({'more_players': True}, info['updates'].pop(0))
+
     def test_all_must_approve_start(self):
         game.join(self.r, 'game', 'alpha')
         game.join(self.r, 'game', 'beta')
@@ -84,6 +91,7 @@ class TestGame(unittest.TestCase):
         game.join(self.r, 'game', 'third')
 
         info = game.info(self.r, 'game').next()
+
         self.assertDictContainsSubset({'join': 'third'}, info['updates'].pop(0))
         self.assertDictContainsSubset({'join': 'second'}, info['updates'].pop(0))
         self.assertDictContainsSubset({'join': 'first'}, info['updates'].pop(0))

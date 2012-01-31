@@ -60,17 +60,22 @@
         </form>
       {{/joined}}
 
-
       {{#undecided}}
-        Wither thou?
-        <form action="move" method="post">
-          <input type="hidden" name="move" value="han">
-          <input type="submit" value="Han" />
-        </form>
-        <form action="move" method="post">
-          <input type="hidden" name="move" value="lando">
-          <input type="submit" value="Lando" />
-        </form>
+
+        {{#state.round}}
+          Wither thou?
+          <form action="move" method="post">
+            <input type="hidden" name="move" value="han">
+            <input type="submit" value="Han" />
+          </form>
+          <form action="move" method="post">
+            <input type="hidden" name="move" value="lando">
+            <input type="submit" value="Lando" />
+          </form>
+        {{/state.round}}
+        {{^state.round}}
+        Game has not yet started.
+        {{/state.round}}
       {{/undecided}}
 
       {{#camp}}You're safe at camp.{{/camp}}
@@ -88,7 +93,7 @@
 {{^round}}
 <div class="join">
   <form action="join" method="post">
-    <label for="name">Name:</label>
+    <label for="name">Join this game as:</label>
     <input type="text" name="player" />
     <input type="submit" value="Join" />
   </form>
@@ -108,14 +113,15 @@
 
   {{#updates}}
     <div>
+      {{#more_players}}Need more players to start game.{{/more_players}}
       {{#join}}{{.}} joined the game.{{/join}}
-      {{#start}}{{.}} wants to enter the temple.{{/start}}
-      {{#move}}{{.}} made their decision.{{/move}}
+      {{#start}}{{.}} wants to start venturing.{{/start}}
+      {{#move}}{{.}} made their move.{{/move}}
       {{#han}}{{#players}}{{.}}, {{/players}} went han.{{/han}}
-      {{#lando}}{{#players}}{{.}}, {{/players}} landoed out, capturing {{value}} gold and leaving {{pot}} behind.{{/lando}}
+      {{#lando}}{{#players}}{{.}}, {{/players}}landoed out, capturing {{value}} gold and leaving {{pot}} behind.{{/lando}}
       {{#death}}{{#players}}{{.}}, {{/players}} all died of {{card}}.{{/death}}
       {{#round}}Starting round {{.}}{{/round}}
-      {{#artifacts.in.play}}{{.}} in play.{{/artifacts.in.play}}
+      {{#artifacts.in.play}}{{.}} is in the deck.{{/artifacts.in.play}}
       {{#card}}{{.}} on the table.{{/card}}
       {{#chat}}
         <span class="speaker">{{speaker}}:</span>

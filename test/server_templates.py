@@ -34,8 +34,12 @@ class TestServerTemplates(TestOpengoldServer):
         self.assertRegexpMatches(resp.content, "meddle")
 
     def test_load_nonexistent_game(self):
+        """
+        Going to a nonexistent game just generates the page to join the game.
+        """
         s = self.new_session()
-        self.assertEquals(404, s.get(HOST + '/nada/').status_code)
+        resp = s.get(HOST + '/nada/')
+        self.assertRegexpMatches(resp.content, '(?i)join this game as')
 
     def test_join_game_notice(self):
         s = self.new_session()
@@ -63,6 +67,16 @@ class TestServerTemplates(TestOpengoldServer):
         resp = s.get(HOST + '/cave/')
         self.assertRegexpMatches(resp.content, "(?i)waiting for more players")
 
+    def test_game_not_started_notice(self):
+        jack = self.new_session()
+        jill = self.new_session()
+
+        jack.post(HOST + '/hill/join', data={'player': 'jack'})
+        jill.post(HOST + '/hill/join', data={'player': 'jill'})
+
+        resp = jack.get(HOST + '/hill/')
+        self.assertRegexpMatches(resp.content, "(?i)game has not yet started")
+
     def test_start_game(self):
         jack = self.new_session()
         jill = self.new_session()
@@ -73,7 +87,7 @@ class TestServerTemplates(TestOpengoldServer):
         jill.post(HOST + '/hill/start')
 
         resp = jack.get(HOST + '/hill/')
-        self.assertRegexpMatches(resp.content, "(?i)jack and jill entered the hill")
+        self.assertRegexpMatches(resp.content, "(?i)starting round 1")
         self.assertRegexpMatches(resp.content, "(?i)\w+ is in the deck")
 
     def test_move(self):
@@ -84,10 +98,10 @@ class TestServerTemplates(TestOpengoldServer):
         jack.post(HOST + '/hill/start')
         jill.post(HOST + '/hill/join', data={'player': 'jill'})
         jill.post(HOST + '/hill/start')
-        jack.post(HOST + '/hill/move/lando')
+        jack.post(HOST + '/hill/move', data={'move': 'han'})
 
         resp = jack.get(HOST + '/hill/')
-        self.assertRegexpMatches(resp.content, "(?i)jack made his move")
+        self.assertRegexpMatches(resp.content, "(?i)jack made their move")
 
     def test_next_round_double_landos(self):
         jack = self.new_session()
@@ -98,12 +112,12 @@ class TestServerTemplates(TestOpengoldServer):
         jill.post(HOST + '/hill/join', data={'player': 'jill'})
         jill.post(HOST + '/hill/start')
 
-        jack.post(HOST + '/hill/move/lando')
-        jill.post(HOST + '/hill/move/lando')
+        jack.post(HOST + '/hill/move', data={'move': 'lando'})
+        jill.post(HOST + '/hill/move', data={'move': 'lando'})
 
         resp = jack.get(HOST + '/hill/')
-        self.assertRegexpMatches(resp.content, "(?i)jack and jill are landos")
-        self.assertRegexpMatches(resp.content, "(?i)advancing to round 2")
+        self.assertRegexpMatches(resp.content, r'(?i)jack,? jill,? landoed out, capturing \d+ gold and leaving \d+ behind')
+        self.assertRegexpMatches(resp.content, r'(?i)starting round 2')
 
 # Primitive runner!
 if __name__ == '__main__':
