@@ -159,6 +159,7 @@ def _save_update(r, k, update):
     update[TIMESTAMP] = timestamp()
     update[UPDATE_ID] = update_id
     r.lpush(path(k, UPDATES), json.dumps(update))
+    _publish_info(r, k)
 
 def _save_game_state(r, k):
     """
@@ -372,6 +373,7 @@ def _game_over(r, k, players):
     r.set(path(k, ROUND), DONE)
     _save_update(r, k, { ROUND: DONE,
                          PLAYERS: _get_players(r, k) })
+
 
 @advances_game_state
 def join(r, k, player):
