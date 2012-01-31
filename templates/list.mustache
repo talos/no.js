@@ -1,7 +1,11 @@
-{{#games}}
-  <div class="game round_{{round}}"><a href="/{{name}}/">{{name}}</a>:
-  {{players}} adventurers</div>
-{{/games}}
-{{^games}}
-No games currently available.
-{{/games}}
+<div id="list">
+  {{#games}}
+    <div class="game round_{{round}}"><a href="/{{name}}/">{{name}}</a>:
+    {{players}} adventurers</div>
+  {{/games}}
+</div>
+<div id="no_games">
+  {{^games}}
+  No games currently available.
+  {{/games}}
+</div>

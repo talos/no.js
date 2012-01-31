@@ -14,18 +14,19 @@
   <link rel="stylesheet" type="text/css" href="/css/default.css" />
 
   <body>
-    <div id="error">
-      {{#error}}
+    {{#error}}
+      <div id="error">
         Ohnoes! There was an error: &quot;{{error}}&quot;.
-      {{/error}}
-    </div>
-    <div id="list">
-      {{> list}}
-      {{^state}}{{> create}}{{/state}}
-    </div>
-    <div id="game">
-      {{> game}}
-    </div>
+      </div>
+    {{/error}}
+
+    {{^state}}
+    {{> create}}
+    {{> list}}
+    {{/state}}
+
+    {{> game}}
+
     <noscript>
       <div class="noscript">
         You've disabled javascript!
