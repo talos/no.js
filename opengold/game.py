@@ -35,6 +35,8 @@ CHAT = 'chat'
 MOVED = 'moved'
 NOT_EXISTS = 'not_exists'
 
+ID = 'id'
+
 ###
 #
 # Redis keys
@@ -467,7 +469,7 @@ def info(r, k, player=None, start_info_id=-1, num_updates=10):
             info = {
                 UPDATES:
                     [json.loads(j) for j in r.lrange(path(k, UPDATES), 0, num_updates)],
-                UPDATE_ID: cur_id }
+                ID: cur_id }
 
             if r.exists(path(k, SAVED)):
                 info[STATE] = json.loads(r.lindex(path(k, SAVED), -1))
@@ -482,9 +484,9 @@ def info(r, k, player=None, start_info_id=-1, num_updates=10):
 
 def games(r, start_game_id=-1):
     """
-    Returns a generator that will return a list of all games every
-    time a new one is created, starting with the specified
-    start_game_id.  Games are ordered most recent first.
+    Returns a generator that will return an object containing a list
+    of all games every time a new one is created, starting with the
+    specified start_game_id.  Games are ordered most recent first.
 
     GARBAGE IN GARBAGE OUT for names! Make sure to sanitize output as
     appropriate.
@@ -499,16 +501,18 @@ def games(r, start_game_id=-1):
 
         # no games t'all
         if cur_id == -1 and start_game_id == -1:
-            yield []
+            yield { GAMES: [],
+                    UPDATE_ID: 0 }
             start_game_id = 0
         # Block waiting for an update
         elif start_game_id >= cur_id:
             listener.next()
         else:
-            yield [{
-                    NAME: k,
-                    ROUND: r.get(path(k, ROUND)),
-                    PLAYERS: r.scard(path(k, PLAYERS))
-                    }
-                for k in r.zrevrange(GAMES, 0, -1)]
+            yield { ID: cur_id,
+                    GAMES: [{
+                        NAME: k,
+                        ROUND: r.get(path(k, ROUND)),
+                        PLAYERS: r.scard(path(k, PLAYERS))
+                        }
+                            for k in r.zrevrange(GAMES, 0, -1)] }
             start_game_id = cur_id

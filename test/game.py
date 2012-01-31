@@ -224,7 +224,7 @@ class TestGame(unittest.TestCase):
         .games() should initially return an empty array if there were no games.
         """
         games = game.games(self.r)
-        self.assertEquals([], games.next())
+        self.assertEquals([], games.next()['games'])
 
     def test_games_advances(self):
         """
@@ -253,7 +253,7 @@ class TestGame(unittest.TestCase):
         games = game.games(self.r)
 
         self.assertItemsEqual(['the hills', 'the valleys'],
-                          [g['name'] for g in games.next()])
+                              [g['name'] for g in games.next()['games']])
 
     def test_games_in_reverse_order(self):
         """
@@ -266,7 +266,7 @@ class TestGame(unittest.TestCase):
         games = game.games(self.r)
 
         self.assertEqual(['synthesis', 'antithesis', 'thesis'],
-                          [g['name'] for g in games.next()])
+                         [g['name'] for g in games.next()['games']])
 
     def test_info_not_exists(self):
         info = game.info(self.r, 'nonexistent').next()
