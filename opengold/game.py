@@ -456,13 +456,13 @@ def info(r, k, player=None, start_info_id=-1, num_updates=10):
 
     while True:
         cur_id = int(r.get(path(k, UPDATE_ID)) or -1)
-        # Game doesn't exist yet.
-        if cur_id == -1 and start_info_id == -1:
-            yield { STATE: { NOT_EXISTS: True },
-                    UPDATE_ID: 0 }
-            start_info_id = 0
+
         # Block waiting for an update to generate something newer
-        elif start_info_id >= cur_id:
+        if start_info_id >= cur_id:
+            if start_info_id == -1:
+                start_info_id = 0
+                yield { STATE: { NOT_EXISTS: True },
+                        UPDATE_ID: start_info_id }
             listener.next()
         else:
             # Components are already in JSON.
@@ -479,8 +479,8 @@ def info(r, k, player=None, start_info_id=-1, num_updates=10):
                 if saved_player:
                     info[YOU] = json.loads(saved_player)
 
-            start_info_id = cur_id
             yield info
+            start_info_id = cur_id
 
 def games(r, start_game_id=-1):
     """
@@ -499,13 +499,12 @@ def games(r, start_game_id=-1):
     while True:
         cur_id = int(r.get(GAME_ID) or -1)
 
-        # no games t'all
-        if cur_id == -1 and start_game_id == -1:
-            yield { GAMES: [],
-                    UPDATE_ID: 0 }
-            start_game_id = 0
         # Block waiting for an update
-        elif start_game_id >= cur_id:
+        if start_game_id >= cur_id:
+            if start_game_id == -1:
+                start_game_id = 0
+                yield { GAMES: [],
+                        UPDATE_ID: start_game_id }
             listener.next()
         else:
             yield { ID: cur_id,

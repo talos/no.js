@@ -226,6 +226,13 @@ class TestGame(unittest.TestCase):
         games = game.games(self.r)
         self.assertEquals([], games.next()['games'])
 
+    def test_no_games_zero_id(self):
+        """
+        .games() should initially return an empty array if there were no games.
+        """
+        games = game.games(self.r)
+        self.assertEquals(0, games.next()['id'])
+
     def test_games_advances(self):
         """
         .games() should return a generator that only advances when a
@@ -242,6 +249,25 @@ class TestGame(unittest.TestCase):
         self.assertTrue(t.is_alive())
 
         game.join(self.r, 'unblocked', 'some dude') # create a game
+
+        t.join(1)
+        self.assertFalse(t.is_alive())
+
+    def test_games_waits_for_id(self):
+        """
+        The ID passed to games should cause it to hold on a response
+        until there are more than that number of games.
+        """
+        games = game.games(self.r, 3)
+
+        t = Thread(target=games.next)
+        t.start()
+
+        game.join(self.r, 'one', 'player')
+        game.join(self.r, 'two', 'player')
+        game.join(self.r, 'three', 'player')
+        self.assertTrue(t.is_alive())
+        game.join(self.r, 'four', 'player')
 
         t.join(1)
         self.assertFalse(t.is_alive())
@@ -268,12 +294,34 @@ class TestGame(unittest.TestCase):
         self.assertEqual(['synthesis', 'antithesis', 'thesis'],
                          [g['name'] for g in games.next()['games']])
 
+    def test_info_id_is_zero_to_start(self):
+        info = game.info(self.r, 'game')
+        self.assertEquals(0, info.next()['id'])
+
     def test_info_not_exists(self):
         info = game.info(self.r, 'nonexistent').next()
-        self.assertEquals(
-            { 'state': { 'not_exists': True },
-              'id': 0 },
-            info)
+        self.assertEquals({ 'not_exists': True }, info['state'])
+
+    def test_info_waits_for_id(self):
+        """
+        The ID passed to info should cause it to hold on a response
+        until there are more than that number of updates.
+        """
+        info = game.info(self.r, 'game', start_info_id=3)
+
+        t = Thread(target=info.next)
+        t.start()
+
+        game.join(self.r, 'game', 'first')
+        game.join(self.r, 'game', 'second')
+        game.join(self.r, 'game', 'third')
+
+        self.assertTrue(t.is_alive())
+
+        game.join(self.r, 'game', 'fourth')
+
+        t.join(1)
+        self.assertFalse(t.is_alive())
 
     def test_info_advances(self):
         info = game.info(self.r, 'blocked')
@@ -308,6 +356,7 @@ class TestGame(unittest.TestCase):
         self.assertTrue(game.join(self.r, 'game', 'some dude'))
         t_partial_info.join(1)
         self.assertFalse(t_partial_info.is_alive())
+
 
     # def test_triple_landos_moves_to_round_2(self):
     #     self.assertTrue(game.join(self.r, 'game', 'socrates'))
