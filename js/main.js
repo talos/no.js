@@ -17,24 +17,23 @@ require([
          * @param id The ID to request.
          */
         update = function (id) {
-            var data = id ? { id : id } : {};
-
-            console.log(id);
+            var data = typeof id === 'undefined' ? {} : { id : id };
 
             $.getJSON(window.location.pathname, data)
                 .done(function (resp, status, doc) {
                     var context = json.parse(doc.responseText);
                     $game.html(mustache.render(game, context));
+
                     update(context.id);
                 }).fail(function (resp) {
                     console.log(resp);
                 });
         };
 
-    update(0);
+    update();
 
     // absorb POST form hits
-    $('form').submit(function () {
+    $(document).on('submit', 'form', function () {
         var $form = $(this);
 
         if ($form.attr('method') === 'post') {
