@@ -19,13 +19,15 @@ LOST = 'lost'
 # Info keys
 #
 ###
+ADVANCED = 'advanced'
 STATUS = 'status'
 SPEAKER = 'speaker'
 MESSAGE = 'message'
 TIMESTAMP = 'timestamp'
 YOU = 'you'
 NAME = 'name'
-MORE_PLAYERS = "more_players"
+MORE_PLAYERS = 'more_players'
+GAME = 'game'
 
 VALUE = 'value'
 CARD = 'card'
@@ -54,7 +56,7 @@ ROUND = 'round' # integer
 PLAYERS = 'players' # set
 STATE = 'state' # key in hash
 LOOT = 'loot' # key in hash
-ARTIFACTS_CAPTURED = 'artifacts.captured' # list prefixed by PLAYERS:player
+ARTIFACTS_CAPTURED = 'artifacts_captured' # list prefixed by PLAYERS:player
 DONE = 'done'
 
 POT = 'pot' # integer
@@ -62,10 +64,10 @@ POT = 'pot' # integer
 DECK = 'deck' # set
 TABLE = 'table' # list
 CAPTURED = 'captured' # list
-ARTIFACTS_UNSEEN = 'artifacts.unseen' # set
-ARTIFACTS_IN_PLAY = 'artifacts.in.play' # set
-ARTIFACTS_DESTROYED = 'artifacts.destroyed' # set
-ARTIFACTS_SEEN_COUNT = 'artifacts.seen.count' # integer
+ARTIFACTS_UNSEEN = 'artifacts_unseen' # set
+ARTIFACTS_IN_PLAY = 'artifacts_in_play' # set
+ARTIFACTS_DESTROYED = 'artifacts_destroyed' # set
+ARTIFACTS_SEEN_COUNT = 'artifacts_seen_count' # integer
 
 LOCK = 'lock'
 UNLOCKED = 'unlocked'
@@ -108,10 +110,11 @@ def advances_game_state(func):
 
                     try:
                         if func(r, k, player, *args):
-                            _save_update(r, k, { func.func_name: player })
+                            _save_update(r, k, { func.func_name: { NAME: player } })
                             _advance_game_state(r, k)
                             _save_game_state(r, k)
-                            _publish_info(r, k)
+                            #_save_update(r, k, { ADVANCED: True })
+                            _publish_update(r, k)
                             return True
                         else:
                             return False
@@ -141,7 +144,7 @@ def _get_players(r, k):
 
     return players
 
-def _publish_info(r, k):
+def _publish_update(r, k):
     """
     Notify .info() that there is new information.
     """
@@ -159,7 +162,6 @@ def _save_update(r, k, update):
     update[TIMESTAMP] = timestamp()
     update[UPDATE_ID] = update_id
     r.lpush(path(k, UPDATES), json.dumps(update))
-    _publish_info(r, k)
 
 def _save_game_state(r, k):
     """
@@ -167,10 +169,13 @@ def _save_game_state(r, k):
     """
     players = _get_players(r, k)
 
+    update_id = r.incr(path(k, UPDATE_ID))
+
     for player in players:
         r.rpush(path(k, PLAYERS, player[NAME], SAVED), json.dumps(player))
 
     game_state = {
+        UPDATE_ID: update_id,
         PLAYERS:
             [ p if p[STATE] in [WON, LOST] else
               { NAME: p[NAME],
@@ -439,6 +444,7 @@ def chat(r, k, speaker, message, superuser=False):
     if r.sismember(path(k, PLAYERS), speaker) or superuser:
         _save_update(r, k, { CHAT: { SPEAKER: speaker,
                                      MESSAGE: message }})
+        _publish_update(r, k)
         return True
     else:
         return False
@@ -463,7 +469,7 @@ def info(r, k, player=None, start_info_id=-1, num_updates=10):
         if start_info_id >= cur_id:
             if start_info_id == -1:
                 start_info_id = 0
-                yield { STATE: { NOT_EXISTS: True },
+                yield { GAME: { NOT_EXISTS: True },
                         UPDATE_ID: start_info_id }
             listener.next()
         else:
@@ -474,7 +480,7 @@ def info(r, k, player=None, start_info_id=-1, num_updates=10):
                 ID: cur_id }
 
             if r.exists(path(k, SAVED)):
-                info[STATE] = json.loads(r.lindex(path(k, SAVED), -1))
+                info[GAME] = json.loads(r.lindex(path(k, SAVED), -1))
 
             if player:
                 saved_player = r.lindex(path(k, PLAYERS, player, SAVED), -1)

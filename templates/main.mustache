@@ -1,10 +1,7 @@
+<!DOCTYPE html>
 <html>
-
   <noscript>
-    {{! refresh on game state updates}}
-    {{#state}}
-      <meta http-equiv="refresh" content="1; url=?id={{id}}" />
-    {{/state}}
+    <meta http-equiv="refresh" content="1; url=?id={{id}}" />
   </noscript>
 
   <!-- require.js -->
@@ -13,6 +10,11 @@
   <!-- CSS -->
   <link rel="stylesheet" type="text/css" href="/css/default.css" />
 
+  <title>
+    {{#game}}Opengold{{/game}}
+    {{#games}}Opengold Games{{/games}}
+  </title>
+
   <body>
     {{#error}}
       <div id="error">
@@ -20,20 +22,42 @@
       </div>
     {{/error}}
 
-    {{^state}}
-    {{> create}}
-    {{> list}}
-    {{/state}}
+    <div id="app">
+      {{^game}}
+        {{> create}}
+        <div id="list">
+          {{> list}}
+        </div>
+      {{/game}}
 
-    {{^games}}
-    {{> game}}
-    {{/games}}
+      {{^games}}
+        <a href="/">Other games</a>
+        {{! CURENT GAME STATE }}
+        <div id="game">
+          {{> game}}
+        </div>
+
+        {{! IN-GAME BLOCK }}
+        <div id="you">
+          {{> you}}
+        </div>
+
+        <div id="chat">
+          {{> chat}}
+        </div>
+
+        {{! UPDATES FOR CURRENT GAME }}
+        <div id="updates">
+          {{> updates}}
+        </div>
+      {{/games}}
+    </div>
 
     <noscript>
       <div class="noscript">
         You've disabled javascript!
         That's groovy.
-        I hope you&quot;re OK with the page wiping your chat whenever something happens.
+        I hope you&apos;re OK with the page wiping your chatbox whenever something happens.
       </div>
     </noscript>
   </body>

@@ -73,24 +73,23 @@ def unquote_game_name(func):
 
 def redirect_unless_json(func):
     """
-    If this request was for json, this returns a response with the
-    specified object.  Otherwise, it redirects to the current
-    location.  If the wrapped function set a non-200 status, that will
-    be returned as-is.
+    Returning a 204 cancels the long poll from the refresh, so if this
+    was not a json request we have to explicitly direct user back to
+    the game.
     """
     def wrapped(self, game_name, *args, **kwargs):
-        func(self, game_name, *args, **kwargs)
+        retval = func(self, game_name, *args, **kwargs)
 
-        if self.status_code == 200:
+        if self.status_code == 204:
             if is_json_request(self.message):
-                self.headers['Content-Type'] = 'application/json'
-                self.set_body(json.dumps(self.body))
-                return self.render()
+                # self.headers['Content-Type'] = 'application/json'
+                # self.set_body(json.dumps(self.body))
+                return retval
             else:
                 # Brubeck's self.redirect() clears cookies, so we can't use it.
                 self._finished = True
                 self.set_status(302)
-                self.headers['Location'] = self.message.path
+                self.headers['Location'] = '/%s/' % game_name
                 return self.render()
         else:
             return self.render()
@@ -159,7 +158,11 @@ class GameListHandler(MustacheRendering):
             else:
                 return self.render_template('main', **context)
         except coro_timeout.Timeout:
-            return self.redirect(self.message.path)
+            if is_json_request(self.message):
+                self.set_status(204)
+                return self.render()
+            else:
+                return self.redirect(self.message.path)
 
 
 class CreateGameHandler(WebMessageHandler):
@@ -210,9 +213,11 @@ class GameHandler(MustacheRendering, PlayerMixin):
             else:
                 return self.render_template('main', **context)
         except coro_timeout.Timeout:
-            # Prevent the browser's timeout page from firing up, but
-            # don't actually stress out with new content.
-            return self.redirect(self.message.path)
+            if is_json_request(self.message):
+                self.set_status(204)
+                return self.render()
+            else:
+                return self.redirect(self.message.path)
 
 
 class ChatHandler(MustacheRendering, PlayerMixin):
@@ -228,13 +233,15 @@ class ChatHandler(MustacheRendering, PlayerMixin):
 
         if message and player:
             if game.chat(self.db_conn, game_name, player, message):
-                self.set_status(200)
+                self.set_status(204)
             else:
                 self.set_status(400, "Could not send chat")
         elif player is None:
             self.set_status(400, "You are not in this game.")
         else:
-            self.set_status(400, "You didn't write a message.")
+            self.set_status(204) # take empty messages gracefully
+
+        return self.render()
 
 
 class JoinHandler(WebMessageHandler, PlayerMixin):
@@ -252,11 +259,13 @@ class JoinHandler(WebMessageHandler, PlayerMixin):
             player_name = self.get_argument('player')
             if game.join(self.db_conn, game_name, player_name):
                 self.set_cookie(urllib2.quote(game_name, ''), player_name, self.application.cookie_secret)
-                self.set_status(200)
+                self.set_status(204)
             else:
                 self.set_status(400, "Could not add %s to game" % player_name)
         else:
             self.set_status(400, "You must specify a name to join a game.")
+
+        return self.render()
 
 
 class StartHandler(WebMessageHandler, PlayerMixin):
@@ -270,9 +279,11 @@ class StartHandler(WebMessageHandler, PlayerMixin):
         player = self.get_player(game_name)
         if player:
             game.start(self.db_conn, game_name, player)
-            self.set_status(200)
+            self.set_status(204)
         else:
             self.set_status(400, 'You are not in this game')
+
+        return self.render()
 
 
 class MoveHandler(WebMessageHandler, PlayerMixin):
@@ -286,11 +297,13 @@ class MoveHandler(WebMessageHandler, PlayerMixin):
         player = self.get_player(game_name)
         if player:
             if game.move(self.db_conn, game_name, player, self.get_argument('move')):
-                self.set_status(200)
+                self.set_status(204)
             else:
                 self.set_status(400, 'Could not submit move')
         else:
             self.set_status(400, 'You are not in this game')
+
+        return self.render()
 
 ###
 #

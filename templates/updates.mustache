@@ -1,0 +1,18 @@
+{{#updates}}
+  <div>
+    {{#more_players}}Waiting for more players.{{/more_players}}
+    {{#join}}{{name}} joined the game.{{/join}}
+    {{#start}}{{name}} wants to start venturing.{{/start}}
+    {{#move}}{{name}} made their move.{{/move}}
+    {{#han}}{{#players}}{{.}} {{/players}} went han.{{/han}}
+    {{#lando}}{{#players}}{{.}} {{/players}}landoed out, capturing {{value}} gold and leaving {{pot}} behind.{{/lando}}
+    {{#death}}{{#players}}{{.}} {{/players}}died of {{card}}.{{/death}}
+    {{#round}}Starting round {{round}}{{/round}}
+    {{#artifacts_in_play}}{{artifacts_in_play}} is in the deck.{{/artifacts_in_play}}
+    {{#card}}{{card}} on the table.{{/card}}
+    {{#chat}}
+      <span class="speaker">{{speaker}}:</span>
+      <span class="message">{{message}}</span>
+    {{/chat}}
+  </div>
+{{/updates}}

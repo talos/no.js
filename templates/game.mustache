@@ -1,131 +1,41 @@
-<div id="game">
-  <div class="state">
-
-    {{! CURENT GAME STATE }}
-    {{#state}}
-      <div class="players">
-        {{#players}}
-          <div>{{name}}: {{state}}</div>
-        {{/players}}
-      </div>
-      <div class="table">
-        In play:
-        {{#table}}
-          <span class="card">{{.}}</span>
-        {{/table}}
-      </div>
-      <div class="captured">
-        Loot captured:
-        {{#captured}}
-          <span class="card">{{.}}</span>
-        {{/captured}}
-      </div>
-      <div class="pot">Pot: {{pot}}</div>
-      {{#round}}
-        <div class="round">Round: {{.}}</div>
-      {{/round}}
-      {{^round}}
-      <div class="round">Game has not yet started.</div>
-      {{/round}}
-      <div class="artifacts_destroyed">
-        Artifacts destroyed:
-        {{#artifacts.destroyed}}
-          <span class="card">{{.}}</span>
-        {{/artifacts.destroyed}}
-      </div>
-      <div class="artifacts_seen_count">
-        Artifacts seen: {{artifacts.seen.count}}
-      </div>
-      <div class="artifacts_in_play">
-        Artifacts in play:
-        {{#artifacts.in.play}}
-          <span class="card">{{.}}</span>
-        {{/artifacts.in.play}}
-      </div>
-    {{/state}}
+{{#game}}
+  <div class="players">
+    {{#players}}
+      <div>{{name}}: {{state}}</div>
+    {{/players}}
   </div>
-
-  {{! IN-GAME BLOCK }}
-  {{#you}}
-
-    {{! CURRENT PLAYER STATE }}
-    <div class="you">
-      <div>Name: {{name}}</div>
-      <div>Loot: {{loot}}</div>
-      <div>Artifacts captured:
-        {{#artifacts.captured}}
-          <span class="card">{{.}}</span>
-        {{/artifacts.captured}}
-      </div>
-  
-      {{! SO MANY CHOICES }}
-      <div class="state">
-        {{#joined}}
-          <form action="start" method="post">
-            <input type="submit" value="Start Game" />
-          </form>
-        {{/joined}}
-        {{#camp}}You're safe at camp.{{/camp}}
-        {{#undecided}}
-          Wither thou?
-          <form action="move" method="post">
-            <input type="hidden" name="move" value="han">
-            <input type="submit" value="Han" />
-          </form>
-          <form action="move" method="post">
-            <input type="hidden" name="move" value="lando">
-            <input type="submit" value="Lando" />
-          </form>
-        {{/undecided}}
-        {{#han}}You're going Han.{{/han}}
-        {{#lando}}Lando-ing out.{{/lando}}
-        {{#won}}Congrats dude, ya won.{{/won}}
-        {{#lost}}Sorry bra, this was not your night.{{/lost}}
-      </div>
-    </div>
-  {{/you}}
-  
-  {{! JOIN GAME IF NOT STARTED YET }}
-  {{^you}}
-  {{#state}}
-  {{^round}}
-  <div class="join">
-    <form action="join" method="post">
-      <label for="name">Join this game as:</label>
-      <input type="text" name="player" />
-      <input type="submit" value="Join" />
-    </form>
+  <div class="table">
+    In play:
+    {{#table}}
+      <span class="card">{{.}}</span>
+    {{/table}}
   </div>
+  <div class="captured">
+    Loot captured:
+    {{#captured}}
+      <span class="card">{{.}}</span>
+    {{/captured}}
+  </div>
+  <div class="pot">Pot: {{pot}}</div>
+  {{#round}}
+    <div class="round">Round: {{round}}</div>
   {{/round}}
-  {{/state}}
-  {{/you}}
-  
-  {{! UPDATES FOR CURRENT GAME }}
-  <div class="updates">
-    {{#you}}
-      <form action="chat" method="post">
-        <input id="chat" type="text" name="message" />
-        <input type="submit" value="Chat" />
-      </form>
-    {{/you}}
-
-    {{#updates}}
-      <div>
-        {{#more_players}}Waiting for more players.{{/more_players}}
-        {{#join}}{{.}} joined the game.{{/join}}
-        {{#start}}{{.}} wants to start venturing.{{/start}}
-        {{#move}}{{.}} made their move.{{/move}}
-        {{#han}}{{#players}}{{.}}, {{/players}} went han.{{/han}}
-        {{#lando}}{{#players}}{{.}}, {{/players}}landoed out, capturing {{value}} gold and leaving {{pot}} behind.{{/lando}}
-        {{#death}}{{#players}}{{.}}, {{/players}} all died of {{card}}.{{/death}}
-        {{#round}}Starting round {{.}}{{/round}}
-        {{#artifacts.in.play}}{{.}} is in the deck.{{/artifacts.in.play}}
-        {{#card}}{{.}} on the table.{{/card}}
-        {{#chat}}
-          <span class="speaker">{{speaker}}:</span>
-          <span class="message">{{message}}</span>
-        {{/chat}}
-      </div>
-    {{/updates}}
+  {{^round}}
+  <div class="round">Game has not yet started.</div>
+  {{/round}}
+  <div class="artifacts_destroyed">
+    Artifacts destroyed:
+    {{#artifacts_destroyed}}
+      <span class="card">{{.}}</span>
+    {{/artifacts_destroyed}}
   </div>
-</div>
+  <div class="artifacts_seen_count">
+    Artifacts seen: {{artifacts.seen.count}}
+  </div>
+  <div class="artifacts_in_play">
+    Artifacts in play:
+    {{#artifacts_in_play}}
+      <span class="card">{{.}}</span>
+    {{/artifacts_in_play}}
+  </div>
+{{/game}}
