@@ -40,6 +40,8 @@ DB = 'db'
 JS_PATH = 'js_path'
 COOKIE_SECRET = 'cookie_secret'
 LONGPOLL_TIMEOUT = 'longpoll_timeout'
+RECV_SPEC = 'recv_spec'
+SEND_SPEC = 'send_spec'
 
 if not len(PARSER.read('config.ini')):
     print "No config.ini file found in this directory.  Writing a config..."
@@ -52,6 +54,8 @@ if not len(PARSER.read('config.ini')):
         PARSER.set(mode, JS_PATH, '/js/build')
         PARSER.set(mode, COOKIE_SECRET, str(uuid.uuid4()))
         PARSER.set(mode, LONGPOLL_TIMEOUT, '20')
+        PARSER.set(mode, RECV_SPEC, 'ipc://127.0.0.1:9001')
+        PARSER.set(mode, SEND_SPEC, 'ipc://127.0.0.1:9000')
 
     try:
         conf = open('config.ini', 'w')
@@ -65,7 +69,9 @@ config = {
     DB: int(PARSER.get(MODE, DB)),
     JS_PATH: PARSER.get(MODE, JS_PATH),
     COOKIE_SECRET: PARSER.get(MODE, COOKIE_SECRET),
-    LONGPOLL_TIMEOUT: int(PARSER.get(MODE, LONGPOLL_TIMEOUT))
+    LONGPOLL_TIMEOUT: int(PARSER.get(MODE, LONGPOLL_TIMEOUT)),
+    RECV_SPEC: PARSER.get(MODE, RECV_SPEC),
+    SEND_SPEC: PARSER.get(MODE, SEND_SPEC),
 }
 
 ###
@@ -324,7 +330,7 @@ class MoveHandler(WebMessageHandler, PlayerMixin):
 #
 ###
 config.update({
-    'mongrel2_pair': ('ipc://127.0.0.1:9999', 'ipc://127.0.0.1:9998'),
+    'mongrel2_pair': (config[RECV_SPEC], config[SEND_SPEC]),
     'handler_tuples': [(r'^/$', GameListHandler),
                        (r'^/create$', CreateGameHandler),
                        (r'^/(?P<game_name>[^/]+)$', ForwardToGameHandler),
