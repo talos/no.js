@@ -14,6 +14,7 @@ require([
     "use strict";
 
     // argh: http://stackoverflow.com/questions/2037295/getjson-back-button-showing-json-return-data-not-the-page
+    // also: http://code.google.com/p/chromium/issues/detail?id=68096
     $.ajaxSetup({ cache: false });
 
     var $app = $('#app'),
