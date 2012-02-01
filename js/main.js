@@ -12,6 +12,10 @@ require([
     'lib/json2'
 ], function (list, game, you, updates, chat, $, mustache, json) {
     "use strict";
+
+    // argh: http://stackoverflow.com/questions/2037295/getjson-back-button-showing-json-return-data-not-the-page
+    $.ajaxSetup({ cache: false });
+
     var $app = $('#app'),
         $chat = $app.find('#chat'),
         lastPoll = null,
@@ -79,6 +83,7 @@ require([
                      data: $form.serialize()
                    })
                 .done(function () {
+                    // clear text inputs
                     $form.find('input[type="text"]').val('');
                     // force a full refresh
                     update();
