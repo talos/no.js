@@ -33,31 +33,40 @@ Look at `config.ini` for defined modes. Defaults are `production`,
 `staging`, and `test`."""
     exit(1)
 
-mode = sys.argv[1]
-parser = SafeConfigParser()
+MODE = sys.argv[1]
+PARSER = SafeConfigParser()
 
-if not len(parser.read('config.ini')):
+DB = 'db'
+JS_PATH = 'js_path'
+COOKIE_SECRET = 'cookie_secret'
+LONGPOLL_TIMEOUT = 'longpoll_timeout'
+
+if not len(PARSER.read('config.ini')):
     print "No config.ini file found in this directory.  Writing a config..."
 
     modes = ['production', 'staging', 'test']
     for i in range(0, len(modes)):
         mode = modes[i]
-        parser.add_section(mode)
-        parser.set(mode, 'db', str(i))
-        parser.set(mode, 'cookie_secret', str(uuid.uuid4()))
-        parser.set(mode, 'longpoll_timeout', '20')
+        PARSER.add_section(mode)
+        PARSER.set(mode, DB, str(i))
+        PARSER.set(mode, JS_PATH, '/js/build')
+        PARSER.set(mode, COOKIE_SECRET, str(uuid.uuid4()))
+        PARSER.set(mode, LONGPOLL_TIMEOUT, '20')
 
     try:
         conf = open('config.ini', 'w')
-        parser.write(conf)
+        PARSER.write(conf)
         conf.close()
     except IOError:
         print "Could not write config file to `config.ini`, exiting..."
         exit(1)
 
-DB = int(parser.get(mode, 'db'))
-COOKIE_SECRET = parser.get(mode, 'cookie_secret')
-LONGPOLL_TIMEOUT = int(parser.get(mode, 'longpoll_timeout'))
+config = {
+    DB: int(PARSER.get(MODE, DB)),
+    JS_PATH: PARSER.get(MODE, JS_PATH),
+    COOKIE_SECRET: PARSER.get(MODE, COOKIE_SECRET),
+    LONGPOLL_TIMEOUT: int(PARSER.get(MODE, LONGPOLL_TIMEOUT))
+}
 
 ###
 #
@@ -151,13 +160,14 @@ class GameListHandler(MustacheRendering):
         games = game.games(self.db_conn, *opt_id)
 
         try:
-            context = coro_timeout.with_timeout(LONGPOLL_TIMEOUT, games.next)
+            context = coro_timeout.with_timeout(config[LONGPOLL_TIMEOUT], games.next)
 
             if is_json_request(self.message):
                 self.headers['Content-Type'] = 'application/json'
                 self.set_body(json.dumps(context))
                 return self.render()
             else:
+                context[JS_PATH] = config[JS_PATH]
                 return self.render_template('main', **context)
         except coro_timeout.Timeout:
             if is_json_request(self.message):
@@ -207,12 +217,13 @@ class GameHandler(MustacheRendering, PlayerMixin):
         info = game.info(self.db_conn, game_name, self.get_player(game_name), *opt_id)
 
         try:
-            context = coro_timeout.with_timeout(LONGPOLL_TIMEOUT, info.next)
+            context = coro_timeout.with_timeout(config[LONGPOLL_TIMEOUT], info.next)
             if is_json_request(self.message):
                 self.headers['Content-Type'] = 'application/json'
                 self.set_body(json.dumps(context))
                 return self.render()
             else:
+                context[JS_PATH] = config[JS_PATH]
                 return self.render_template('main', **context)
         except coro_timeout.Timeout:
             if is_json_request(self.message):
@@ -312,7 +323,7 @@ class MoveHandler(WebMessageHandler, PlayerMixin):
 # BRUBECK RUNNER
 #
 ###
-config = {
+config.update({
     'mongrel2_pair': ('ipc://127.0.0.1:9999', 'ipc://127.0.0.1:9998'),
     'handler_tuples': [(r'^/$', GameListHandler),
                        (r'^/create$', CreateGameHandler),
@@ -322,10 +333,10 @@ config = {
                        (r'^/(?P<game_name>[^/]+)/start$', StartHandler),
                        (r'^/(?P<game_name>[^/]+)/move$', MoveHandler),
                        (r'^/(?P<game_name>[^/]+)/chat$', ChatHandler)],
-    'cookie_secret': COOKIE_SECRET,
-    'db_conn': redis.StrictRedis(db=DB),
+    'cookie_secret': config[COOKIE_SECRET],
+    'db_conn': redis.StrictRedis(db=config[DB]),
     'template_loader': load_mustache_env('./templates')
-}
+})
 
 opengold = Brubeck(**config)
 opengold.run()
