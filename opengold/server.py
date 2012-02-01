@@ -39,9 +39,11 @@ parser = SafeConfigParser()
 if not len(parser.read('config.ini')):
     print "No config.ini file found in this directory.  Writing a config..."
 
-    for mode in ['production', 'staging', 'test']:
+    modes = ['production', 'staging', 'test']
+    for i in range(0, len(modes)):
+        mode = modes[i]
         parser.add_section(mode)
-        parser.set(mode, 'db_name', 'opengold_%s' % mode)
+        parser.set(mode, 'db', str(i))
         parser.set(mode, 'cookie_secret', str(uuid.uuid4()))
         parser.set(mode, 'longpoll_timeout', '20')
 
@@ -53,7 +55,7 @@ if not len(parser.read('config.ini')):
         print "Could not write config file to `config.ini`, exiting..."
         exit(1)
 
-DB_NAME = parser.get(mode, 'db_name')
+DB = int(parser.get(mode, 'db'))
 COOKIE_SECRET = parser.get(mode, 'cookie_secret')
 LONGPOLL_TIMEOUT = int(parser.get(mode, 'longpoll_timeout'))
 
@@ -321,7 +323,7 @@ config = {
                        (r'^/(?P<game_name>[^/]+)/move$', MoveHandler),
                        (r'^/(?P<game_name>[^/]+)/chat$', ChatHandler)],
     'cookie_secret': COOKIE_SECRET,
-    'db_conn': redis.StrictRedis(db=DB_NAME),
+    'db_conn': redis.StrictRedis(db=DB),
     'template_loader': load_mustache_env('./templates')
 }
 
