@@ -1,1 +1,0 @@
-({appDir:".",baseUrl:".",dir:"../build",modules:[{name:"main"}]})
