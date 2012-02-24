@@ -1,6 +1,12 @@
-{{#you}}
-  <form action="chat" method="post">
-    <input id="chat" type="text" name="message" />
-    <input type="submit" value="Chat" />
-  </form>
-{{/you}}
+<!DOCTYPE html>
+<html>
+  <meta http-equiv="refresh" content="1; url=?id={{id}}" />
+
+  <body>
+    <ul id="messages">
+      {{#messages}}
+        <li>{{name}}: {{message}}</li>
+      {{/messages}}
+    </ul>
+  </body>
+</html> 
