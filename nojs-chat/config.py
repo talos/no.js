@@ -26,8 +26,8 @@ if not len(PARSER.read('config.ini')):
         PARSER.set(mode, 'db', str(i))
         PARSER.set(mode, 'cookie_secret', str(uuid.uuid4()))
         PARSER.set(mode, 'longpoll_timeout', '20')
-        PARSER.set(mode, 'recv_spec', 'ipc://no-js:1')
-        PARSER.set(mode, 'send_spec', 'ipc://no-js:0')
+        PARSER.set(mode, 'recv_spec', 'ipc://nojs:1')
+        PARSER.set(mode, 'send_spec', 'ipc://nojs:0')
 
     try:
         conf = open('config.ini', 'w')

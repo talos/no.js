@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html>
-  <title>{{room}}</title>
-  <body>
-    <frameset rows="*,100px">
-      <frame src="/{{room}}/messages" />
-      <frame src="/{{room}}/buffer" />
-    </frameset>
-  </body>
+  <head>
+    <title>{{room}}</title>
+  </head>
+  
+  <frameset rows="*,100px">
+    <frame noresize="noresize" src="/{{room}}/messages" />
+    <frame noresize="noresize" src="/{{room}}/buffer" />
+  </frameset>
 </html> 

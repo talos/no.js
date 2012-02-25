@@ -2,14 +2,22 @@
 <html>
   <title>No-JS Chat Rooms</title>
   <body>
-    <ul id="rooms">
+    <img align="left" src="logo.png" />
+    <h1>No-JS Chat Rooms</h1>
+    <hr>
+    <table id="rooms">
       {{#rooms}}
-        <li><a href="/{{name}}/">{{name}}</a> ({{number}})</li>
+        <tr>
+          <td class="room"><a href="/{{name}}/">{{name}}</a></td>
+          <td class="users"><i>({{users}})</i></td>
+        </tr>
       {{/rooms}}
-    </ul>
+    </table>
+    <hr>
     <form action="/" method="get">
-      <input type="text" name="room" />
-      <input type="submit" />
+      <label for="room">Create a new room:</label>
+      <input type="text" size="15" maxlength="15" name="room" />
+      <input type="submit" value="Create" />
     </form>
   </body>
 </html> 

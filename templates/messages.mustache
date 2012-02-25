@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+  <meta http-equiv="refresh" content="1; url=?id={{id}}" />
+
+  <body>
+    <table id="messages">
+      {{#messages}}
+        <tr>
+          <td class="time"><i>{{time}}</i></td>
+          <td class="user"><b>{{user}}:</b></td>
+          <td class="message">{{message}}</td>
+        </tr>
+      {{/messages}}
+    </table>
+    <a name="bottom"></a>
+  </body>
+</html> 

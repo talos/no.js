@@ -3,12 +3,15 @@
   <body>
     <form action="/{{room}}/buffer" method="post">
       {{#user}}
-        <textarea name="message"></textarea>
+        <label for="message">{{user}}</label>
+        <input type="text" size="50" name="message" />
+        <input type="submit" value="Chat" />
       {{/user}}
       {{^user}}
-        <input type="text" name="user" />
+        <label for="user">Enter a name to join:</label>
+        <input type="text" maxlength="15" size="15" name="user" />
+        <input type="submit" value="Join" />
       {{/user}}
-     <input type="submit" />
     </form>
   </body>
 </html> 

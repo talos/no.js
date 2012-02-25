@@ -4,14 +4,12 @@ import redis
 import chat 
 from config import DB, COOKIE_SECRET, LONGPOLL_TIMEOUT, SEND_SPEC, RECV_SPEC 
 from templating import load_mustache_env, MustacheRendering
-from brubeck.request_handling import Brubeck, WebMessageHandler
+from brubeck.request_handling import Brubeck 
 
 try:
-    import gevent.timeout.with_timeout as with_timeout
-    import gevent.timeout.Timeout as Timeout
+    import gevent.timeout as timeout
 except ImportError:
-    import eventlet.timeout.with_timeout as with_timeout
-    import eventlet.timeout.Timeout as Timeout
+    import eventlet.timeout as timeout
 
 #
 # MIXINS
@@ -38,14 +36,25 @@ class IndexHandler(MustacheRendering):
         Otherwise, list all rooms currently available.  Only returns if there
         is a room with an ID greater than the provided ID.
         """
-        if self.get_argument('room'):
-            return self.redirect('/%s/' % self.get_argument('room'))
+        room = self.get_argument('room')
+        if room: 
+            return self.redirect('/%s/' % room)
         else:
-            rooms = chat.rooms(self.db_conn,id=self.get_argument('id'))
             try:
-                context = with_timeout(LONGPOLL_TIMEOUT, rooms.next)
+                id = int(self.get_argument('id') or -1)
+            except ValueError:
+                id = -1
+
+            try:
+                id, rooms = timeout.with_timeout(
+                    LONGPOLL_TIMEOUT,
+                    chat.rooms(self.db_conn, id=id).next)
+                context = {
+                    'id': id,
+                    'rooms': rooms
+                }
                 return self.render_template('index', **context)
-            except Timeout:
+            except timeout.Timeout:
                 return self.redirect(self.message.path)
 
 
@@ -65,16 +74,28 @@ class MessagesHandler(MustacheRendering):
         Render 'limit' messages for this room.  Should hang if there
         are no new messages.
         """
-        messages = chat.messages(self.db_conn,
-                                 room,
-                                 limit=self.get_argument('limit'),
-                                 id=self.get_argument('id'))
+        try:
+            limit = int(self.get_argument('limit') or 10)
+        except ValueError:
+            limit = 10
 
         try:
-            context = with_timeout(LONGPOLL_TIMEOUT, messages.next)
+            id = int(self.get_argument('id') or -1)
+        except ValueError:
+            id = -1
+
+        try:
+            id, messages = timeout.with_timeout(
+                LONGPOLL_TIMEOUT,
+                chat.messages(self.db_conn, room, limit=limit, id=id).next)
+            context = {
+                'id': id,
+                'room': room,
+                'messages': messages
+            }
             return self.render_template('messages', **context)
-        except Timeout:
-            return self.redirect(self.message.path)
+        except timeout.Timeout:
+            return self.redirect(self.message.path + '#bottom')
 
 
 class BufferHandler(MustacheRendering, UserMixin):
@@ -87,7 +108,7 @@ class BufferHandler(MustacheRendering, UserMixin):
         """
         return self.render_template('buffer',
                                     **{ 'room': room,
-                                        'user': self.get_user(room) }
+                                        'user': self.get_user(room) })
 
     def post(self, room):
         """
@@ -100,7 +121,8 @@ class BufferHandler(MustacheRendering, UserMixin):
         if user:
             message = self.get_argument('message')
             if chat.message(self.db_conn, room, user, message):
-                self.set_status(204) # no reason to refresh the buffer
+                #self.set_status(204) # no reason to refresh the buffer
+                return self.redirect(self.message.path) # TODO make 204 work
             else:
                 self.set_status(400, "Could not send chat")
             return self.render()
