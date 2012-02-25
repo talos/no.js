@@ -1,348 +1,138 @@
 #!/usr/bin/env python
 
 import redis
-import json
-import sys
-import urllib2
-import uuid
-from ConfigParser import SafeConfigParser
-
-import game
+import chat 
+from config import DB, COOKIE_SECRET, LONGPOLL_TIMEOUT, SEND_SPEC, RECV_SPEC 
 from templating import load_mustache_env, MustacheRendering
-
 from brubeck.request_handling import Brubeck, WebMessageHandler
 
 try:
-    import gevent.timeout as coro_timeout
+    import gevent.timeout.with_timeout as with_timeout
+    import gevent.timeout.Timeout as Timeout
 except ImportError:
-    import eventlet.timeout as coro_timeout
+    import eventlet.timeout.with_timeout as with_timeout
+    import eventlet.timeout.Timeout as Timeout
 
-###
-#
-# CONFIG
-#
-###
-if len(sys.argv) != 2:
-    print """
-Opengold server must be invoked with a single argument, telling it
-which mode from `config.ini` to use:
-
-python opengold/server.py <MODE>
-
-Look at `config.ini` for defined modes. Defaults are `production`,
-`staging`, and `test`."""
-    exit(1)
-
-MODE = sys.argv[1]
-PARSER = SafeConfigParser()
-
-DB = 'db'
-JS_PATH = 'js_path'
-COOKIE_SECRET = 'cookie_secret'
-LONGPOLL_TIMEOUT = 'longpoll_timeout'
-RECV_SPEC = 'recv_spec'
-SEND_SPEC = 'send_spec'
-
-if not len(PARSER.read('config.ini')):
-    print "No config.ini file found in this directory.  Writing a config..."
-
-    modes = ['production', 'staging', 'test']
-    for i in range(0, len(modes)):
-        mode = modes[i]
-        PARSER.add_section(mode)
-        PARSER.set(mode, DB, str(i))
-        PARSER.set(mode, JS_PATH, '/js/build')
-        PARSER.set(mode, COOKIE_SECRET, str(uuid.uuid4()))
-        PARSER.set(mode, LONGPOLL_TIMEOUT, '20')
-        PARSER.set(mode, RECV_SPEC, 'ipc://127.0.0.1:9001')
-        PARSER.set(mode, SEND_SPEC, 'ipc://127.0.0.1:9000')
-
-    try:
-        conf = open('config.ini', 'w')
-        PARSER.write(conf)
-        conf.close()
-    except IOError:
-        print "Could not write config file to `config.ini`, exiting..."
-        exit(1)
-
-config = {
-    DB: int(PARSER.get(MODE, DB)),
-    JS_PATH: PARSER.get(MODE, JS_PATH),
-    COOKIE_SECRET: PARSER.get(MODE, COOKIE_SECRET),
-    LONGPOLL_TIMEOUT: int(PARSER.get(MODE, LONGPOLL_TIMEOUT)),
-    RECV_SPEC: PARSER.get(MODE, RECV_SPEC),
-    SEND_SPEC: PARSER.get(MODE, SEND_SPEC),
-}
-
-###
-#
-# DECORATORS
-#
-###
-def unquote_game_name(func):
-    """
-    Replace the decorated function's first argument with an unquoted
-    version of the game_name.
-    """
-    def wrapped(self, game_name, *args, **kwargs):
-        return func(self, urllib2.unquote(game_name), *args, **kwargs)
-    return wrapped
-
-def redirect_unless_json(func):
-    """
-    Returning a 204 cancels the long poll from the refresh, so if this
-    was not a json request we have to explicitly direct user back to
-    the game.
-    """
-    def wrapped(self, game_name, *args, **kwargs):
-        retval = func(self, game_name, *args, **kwargs)
-
-        if self.status_code == 204:
-            if is_json_request(self.message):
-                # self.headers['Content-Type'] = 'application/json'
-                # self.set_body(json.dumps(self.body))
-                return retval
-            else:
-                # Brubeck's self.redirect() clears cookies, so we can't use it.
-                self._finished = True
-                self.set_status(302)
-                self.headers['Location'] = '/%s/' % game_name
-                return self.render()
-        else:
-            return self.render()
-
-    return wrapped
-
-###
 #
 # MIXINS
 #
-###
-class PlayerMixin():
-    """
-    This mixin provides a get_player() method.  The passed game_name
-    should already be unquoted, as it will be re-quoted.
-    """
-    def get_player(self, game_name):
+class UserMixin():
+
+    def get_user(self, room):
         """
-        Get the player for the specified game_name, or None if the
-        user is not taking part.  game_name should not be quoted.
+        Get the user for the specified room, or None if the
+        user is not taking part.
         """
-        return self.get_cookie(urllib2.quote(game_name, ''), None, self.application.cookie_secret)
+        return self.get_cookie(room, None, self.application.cookie_secret)
 
 
-###
-#
-# HELPERS
-#
-###
-def is_json_request(message):
-    """
-    True if this request was for JSON, False otherwise.
-    """
-    return message.headers.get('accept').rfind('application/json') > -1
-
-
-###
 #
 # HANDLERS
 #
-###
-class GameListHandler(MustacheRendering):
+class IndexHandler(MustacheRendering):
 
     def get(self):
         """
-        List all games currently available.  Only returns if there is
-        a game with an ID greater than the provided ID.
+        If the user wants to 'create' a room, forward them to it.
+
+        Otherwise, list all rooms currently available.  Only returns if there
+        is a room with an ID greater than the provided ID.
         """
-
-        opt_id = []
-        try:
-            if self.get_argument('id'):
-                opt_id.append(int(self.get_argument('id')))
-        except ValueError:
-            pass
-
-        games = game.games(self.db_conn, *opt_id)
-
-        try:
-            context = coro_timeout.with_timeout(config[LONGPOLL_TIMEOUT], games.next)
-
-            if is_json_request(self.message):
-                self.headers['Content-Type'] = 'application/json'
-                self.set_body(json.dumps(context))
-                return self.render()
-            else:
-                context[JS_PATH] = config[JS_PATH]
-                return self.render_template('main', **context)
-        except coro_timeout.Timeout:
-            if is_json_request(self.message):
-                self.set_status(204)
-                return self.render()
-            else:
-                return self.redirect(self.message.path)
-
-
-class CreateGameHandler(WebMessageHandler):
-
-    def get(self):
-        """
-        'Create' a game -- really just forward directly to a game page.
-        """
-        if self.get_argument('name'):
-            return self.redirect('/' + self.get_argument('name') + '/')
+        if self.get_argument('room'):
+            return self.redirect('/%s/' % self.get_argument('room'))
         else:
-            return self.redirect('/')
-
-
-class ForwardToGameHandler(WebMessageHandler):
-
-    def get(self, game_name):
-        """
-        Games should be accessed with a trailing slash.
-        """
-        return self.redirect('/%s/' % game_name)
-
-
-class GameHandler(MustacheRendering, PlayerMixin):
-
-    @unquote_game_name
-    def get(self, game_name):
-        """
-        Get information about happenings in game since optional id
-        argument.  Will hang until something happens after id.  If
-        nothing happens for long enough, it will redirect to itself.
-        """
-        opt_id = []
-        try:
-            if self.get_argument('id'):
-                opt_id.append(int(self.get_argument('id')))
-        except ValueError:
-            pass
-
-        info = game.info(self.db_conn, game_name, self.get_player(game_name), *opt_id)
-
-        try:
-            context = coro_timeout.with_timeout(config[LONGPOLL_TIMEOUT], info.next)
-            if is_json_request(self.message):
-                self.headers['Content-Type'] = 'application/json'
-                self.set_body(json.dumps(context))
-                return self.render()
-            else:
-                context[JS_PATH] = config[JS_PATH]
-                return self.render_template('main', **context)
-        except coro_timeout.Timeout:
-            if is_json_request(self.message):
-                self.set_status(204)
-                return self.render()
-            else:
+            rooms = chat.rooms(self.db_conn,id=self.get_argument('id'))
+            try:
+                context = with_timeout(LONGPOLL_TIMEOUT, rooms.next)
+                return self.render_template('index', **context)
+            except Timeout:
                 return self.redirect(self.message.path)
 
 
-class ChatHandler(MustacheRendering, PlayerMixin):
+class RoomHandler(MustacheRendering):
 
-    @unquote_game_name
-    @redirect_unless_json
-    def post(self, game_name):
+    def get(self, room):
         """
-        Message other players in the game.
+        Render the room frameset (ew).
         """
-        message = self.get_argument('message')
-        player = self.get_player(game_name)
+        return self.render_template('room', **{'room': room})
 
-        if message and player:
-            if game.chat(self.db_conn, game_name, player, message):
-                self.set_status(204)
+
+class MessagesHandler(MustacheRendering):
+
+    def get(self, room):
+        """
+        Render 'limit' messages for this room.  Should hang if there
+        are no new messages.
+        """
+        messages = chat.messages(self.db_conn,
+                                 room,
+                                 limit=self.get_argument('limit'),
+                                 id=self.get_argument('id'))
+
+        try:
+            context = with_timeout(LONGPOLL_TIMEOUT, messages.next)
+            return self.render_template('messages', **context)
+        except Timeout:
+            return self.redirect(self.message.path)
+
+
+class BufferHandler(MustacheRendering, UserMixin):
+ 
+    def get(self, room):
+        """
+        Render the buffer for the user in their current room.
+
+        This will either let them join the room, or say something.
+        """
+        return self.render_template('buffer',
+                                    **{ 'room': room,
+                                        'user': self.get_user(room) }
+
+    def post(self, room):
+        """
+        Handle a post to the buffer form.  This should be a message if the
+        user is in the chat, or a chat-join otherwise.
+        """
+        user = self.get_user(room)
+
+        # If they're in the chat, they can send a message
+        if user:
+            message = self.get_argument('message')
+            if chat.message(self.db_conn, room, user, message):
+                self.set_status(204) # no reason to refresh the buffer
             else:
                 self.set_status(400, "Could not send chat")
-        elif player is None:
-            self.set_status(400, "You are not in this game.")
+            return self.render()
+
+        # Otherwise, they can join the chat
         else:
-            self.set_status(204) # take empty messages gracefully
-
-        return self.render()
-
-
-class JoinHandler(WebMessageHandler, PlayerMixin):
-
-    @unquote_game_name
-    @redirect_unless_json
-    def post(self, game_name):
-        """
-        Try to join the game with the post-specified player name `player`.
-        If it succeeds, feed the user a cookie!
-        """
-        if self.get_player(game_name):  # player already in this game
-            self.set_status(400, "You are already in this game")
-        elif self.get_argument('player'):
-            player_name = self.get_argument('player')
-            if game.join(self.db_conn, game_name, player_name):
-                self.set_cookie(urllib2.quote(game_name, ''), player_name, self.application.cookie_secret)
-                self.set_status(204)
+            user_name = self.get_argument('user')
+            if chat.join(self.db_conn, room, user_name):
+                # Only \w is allowed in room, so this is OK
+                self.set_cookie(room, user_name, self.application.cookie_secret)
+                return self.redirect(self.message.path)
             else:
-                self.set_status(400, "Could not add %s to game" % player_name)
-        else:
-            self.set_status(400, "You must specify a name to join a game.")
+                # TODO better rejection handling (common case for dupe names)
+                self.set_status(400, "Could not add %s to room" % user_name)
+                return self.render()
 
-        return self.render()
-
-
-class StartHandler(WebMessageHandler, PlayerMixin):
-
-    @unquote_game_name
-    @redirect_unless_json
-    def post(self, game_name):
-        """
-        Vote to enter temple/advance to next round.
-        """
-        player = self.get_player(game_name)
-        if player:
-            game.start(self.db_conn, game_name, player)
-            self.set_status(204)
-        else:
-            self.set_status(400, 'You are not in this game')
-
-        return self.render()
-
-
-class MoveHandler(WebMessageHandler, PlayerMixin):
-
-    @unquote_game_name
-    @redirect_unless_json
-    def post(self, game_name):
-        """
-        Looks like we got a Lando!!
-        """
-        player = self.get_player(game_name)
-        if player:
-            if game.move(self.db_conn, game_name, player, self.get_argument('move')):
-                self.set_status(204)
-            else:
-                self.set_status(400, 'Could not submit move')
-        else:
-            self.set_status(400, 'You are not in this game')
-
-        return self.render()
 
 ###
 #
-# BRUBECK RUNNER
+# RUN BRUBECK RUN
 #
 ###
-config.update({
-    'mongrel2_pair': (config[RECV_SPEC], config[SEND_SPEC]),
-    'handler_tuples': [(r'^/$', GameListHandler),
-                       (r'^/create$', CreateGameHandler),
-                       (r'^/(?P<game_name>[^/]+)$', ForwardToGameHandler),
-                       (r'^/(?P<game_name>[^/]+)/$', GameHandler),
-                       (r'^/(?P<game_name>[^/]+)/join$', JoinHandler),
-                       (r'^/(?P<game_name>[^/]+)/start$', StartHandler),
-                       (r'^/(?P<game_name>[^/]+)/move$', MoveHandler),
-                       (r'^/(?P<game_name>[^/]+)/chat$', ChatHandler)],
-    'cookie_secret': config[COOKIE_SECRET],
-    'db_conn': redis.StrictRedis(db=config[DB]),
+config = {
+    'mongrel2_pair': (RECV_SPEC, SEND_SPEC),
+    'handler_tuples': [(r'^/$', IndexHandler),
+                       (r'^/(?P<room>\w+)/?$', RoomHandler),
+                       (r'^/(?P<room>\w+)/buffer$', BufferHandler),
+                       (r'^/(?P<room>\w+)/messages$', MessagesHandler)],
+    'cookie_secret': COOKIE_SECRET,
+    'db_conn': redis.StrictRedis(db=DB),
     'template_loader': load_mustache_env('./templates')
-})
+}
 
 opengold = Brubeck(**config)
 opengold.run()

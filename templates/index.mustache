@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+  <title>No-JS Chat Rooms</title>
+  <body>
+    <ul id="rooms">
+      {{#rooms}}
+        <li><a href="/{{name}}/">{{name}}</a> ({{number}})</li>
+      {{/rooms}}
+    </ul>
+    <form action="/" method="get">
+      <input type="text" name="room" />
+      <input type="submit" />
+    </form>
+  </body>
+</html> 

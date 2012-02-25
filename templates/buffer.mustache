@@ -1,9 +1,14 @@
 <!DOCTYPE html>
 <html>
   <body>
-    <form action="chat/{{room}}/say" method="post">
-      <textarea name="message"></textarea>
-      <input type="submit" />
+    <form action="/{{room}}/buffer" method="post">
+      {{#user}}
+        <textarea name="message"></textarea>
+      {{/user}}
+      {{^user}}
+        <input type="text" name="user" />
+      {{/user}}
+     <input type="submit" />
     </form>
   </body>
 </html> 
