@@ -140,17 +140,15 @@ class BufferHandler(MustacheRendering, UserMixin):
                 return self.render()
 
 
-###
 #
 # RUN BRUBECK RUN
 #
-###
 config = {
     'mongrel2_pair': (RECV_SPEC, SEND_SPEC),
     'handler_tuples': [(r'^/$', IndexHandler),
-                       (r'^/(?P<room>\w+)/?$', RoomHandler),
-                       (r'^/(?P<room>\w+)/buffer$', BufferHandler),
-                       (r'^/(?P<room>\w+)/messages$', MessagesHandler)],
+                       (r'^/(?P<room>[^/]+)/?$', RoomHandler),
+                       (r'^/(?P<room>[^/]+)/buffer$', BufferHandler),
+                       (r'^/(?P<room>[^/]+)/messages$', MessagesHandler)],
     'cookie_secret': COOKIE_SECRET,
     'db_conn': redis.StrictRedis(db=DB),
     'template_loader': load_mustache_env('./templates')
