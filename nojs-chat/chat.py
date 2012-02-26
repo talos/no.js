@@ -55,6 +55,28 @@ def message(r, room, user, message):
     else:
         return False
 
+def rooms(r, id=-1):
+    """
+    Returns a generator that will yield a new ID and an array of rooms when
+    the number of rooms changes.
+    """
+    pubsub = r.pubsub()
+    pubsub.subscribe(path(ROOMS))
+
+    listener = pubsub.listen()
+
+    while True:
+        cur_id = r.scard(path(ROOMS))
+
+        # Block waiting for an update
+        if id == cur_id and id != -1:
+            listener.next()
+        else:
+            id = cur_id
+            yield id, [{ NAME: room,
+                         USERS: r.scard(path(ROOMS, room, USERS)) }
+                      for room in r.smembers(path(ROOMS))]
+
 def users(r, room, id=-1):
     """
     Returns a generator that will yield a new ID and an array of users when the
@@ -66,15 +88,15 @@ def users(r, room, id=-1):
     listener = pubsub.listen()
 
     while True:
-        cur_id = r.llen(path(ROOMS, room, USERS))
+        cur_id = r.scard(path(ROOMS, room, USERS))
 
         # Since user count varies up and down, check equality 
-        if id != cur_id:
+        if id == cur_id and id != -1:
             listener.next()
         else:
-            yield cur_id, [{ NAME: name } 
-                           for name in r.lrange(path(ROOMS, room, USERS), 0, -1)]
             id = cur_id
+            yield id, [{ NAME: name } 
+                       for name in r.smembers(path(ROOMS, room, USERS))]
 
 def messages(r, room, id=-1, limit=50):
     """
@@ -96,31 +118,7 @@ def messages(r, room, id=-1, limit=50):
         if id >= cur_id:
             listener.next()
         else:
+            id = cur_id
             # Components are already in JSON.
-            yield cur_id, [json.loads(j)
-                           for j in r.lrange(path(ROOMS, room, MESSAGES),
-                                             -limit,
-                                             -1)]
-            id = cur_id
-
-def rooms(r, id=-1):
-    """
-    Returns a generator that will yield a new ID and an array of rooms when a
-    new room appears.
-    """
-    pubsub = r.pubsub()
-    pubsub.subscribe(path(ROOMS))
-
-    listener = pubsub.listen()
-
-    while True:
-        cur_id = r.scard(path(ROOMS))
-
-        # Block waiting for an update
-        if id >= cur_id:
-            listener.next()
-        else:
-            yield cur_id, [{ NAME: room,
-                             USERS: r.scard(path(ROOMS, room, USERS)) }
-                          for room in r.smembers(path(ROOMS))]
-            id = cur_id
+            yield id, [json.loads(j)
+                       for j in r.lrange(path(ROOMS, room, MESSAGES), -limit, -1)]

@@ -1,0 +1,21 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Frameset//EN" "http://www.w3.org/TR/html4/frameset.dtd">
+<html>
+  <head>
+    <meta http-equiv="refresh" content="0; url=?id={{id}}" />
+  </head>
+  <body>
+    <img align="left" src="/assets/img/logo.png" />
+    <h1>No.JS Chat Rooms</h1>
+    <h3>Real-time chat, nary a line of client-side code.</h3>
+    <h5>IE4-tested, mother-approved.</h5>
+    <hr>
+    <table id="rooms">
+      {{#rooms}}
+        <tr class="room">
+          <td class="name"><a target="_top" href="/{{name}}/">{{name}}</a></td>
+          <td class="users"><i>({{users}})</i></td>
+        </tr>
+      {{/rooms}}
+    </table>
+  </body>
+</html>

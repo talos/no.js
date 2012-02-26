@@ -1,11 +1,13 @@
-<!DOCTYPE html>
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Frameset//EN" "http://www.w3.org/TR/html4/frameset.dtd">
 <html>
   <head>
-    <title>{{room}}</title>
+    <title>No.JS Chat: {{room}}</title>
   </head>
-  
-  <frameset rows="*,100px">
-    <frame noresize="noresize" src="/{{room}}/messages" />
+  <frameset rows="*,80px">
+    <frameset cols="140px,*">
+      <frame noresize="noresize" src="/{{room}}/users" />
+      <frame noresize="noresize" src="/{{room}}/messages#bottom" />
+    </frameset>
     <frame noresize="noresize" src="/{{room}}/buffer" />
   </frameset>
 </html> 

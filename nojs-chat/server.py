@@ -31,31 +31,48 @@ class IndexHandler(MustacheRendering):
 
     def get(self):
         """
-        If the user wants to 'create' a room, forward them to it.
+        Render the index frameset.  ew.
+        """
+        return self.render_template('index')
 
-        Otherwise, list all rooms currently available.  Only returns if there
-        is a room with an ID greater than the provided ID.
+
+class RoomsHandler(MustacheRendering):
+
+    def get(self):
+        """
+        List all rooms currently available.  Hangs until the number of rooms
+        changes.
+        """
+        try:
+            id = int(self.get_argument('id') or -1)
+        except ValueError:
+            id = -1
+
+        try:
+            id, rooms = timeout.with_timeout(
+                LONGPOLL_TIMEOUT,
+                chat.rooms(self.db_conn, id=id).next)
+            context = {
+                'id': id,
+                'rooms': rooms
+            }
+            return self.render_template('rooms', **context)
+        except timeout.Timeout:
+            return self.redirect(self.message.path)
+
+
+class CreateHandler(MustacheRendering):
+
+    def get(self):
+        """
+        'Create' the room by forwarding to it if the parameter is specified,
+        otherwise render the create room template.
         """
         room = self.get_argument('room')
-        if room: 
+        if room:
             return self.redirect('/%s/' % room)
         else:
-            try:
-                id = int(self.get_argument('id') or -1)
-            except ValueError:
-                id = -1
-
-            try:
-                id, rooms = timeout.with_timeout(
-                    LONGPOLL_TIMEOUT,
-                    chat.rooms(self.db_conn, id=id).next)
-                context = {
-                    'id': id,
-                    'rooms': rooms
-                }
-                return self.render_template('index', **context)
-            except timeout.Timeout:
-                return self.redirect(self.message.path)
+            return self.render_template('create')
 
 
 class RoomHandler(MustacheRendering):
@@ -67,6 +84,32 @@ class RoomHandler(MustacheRendering):
         return self.render_template('room', **{'room': room})
 
 
+class UsersHandler(MustacheRendering):
+
+    def get(self, room):
+        """
+        Render the users currently in the room.  Hangs if nothing has happened
+        since ID.
+        """
+        try:
+            id = int(self.get_argument('id') or -1)
+        except ValueError:
+            id = -1
+
+        try:
+            id, users = timeout.with_timeout(
+                LONGPOLL_TIMEOUT,
+                chat.users(self.db_conn, room, id=id).next)
+            context = {
+                'id': id,
+                'room': room,
+                'users': users 
+            }
+            return self.render_template('users', **context)
+        except timeout.Timeout:
+            return self.redirect(self.message.path)
+
+
 class MessagesHandler(MustacheRendering):
 
     def get(self, room):
@@ -75,9 +118,9 @@ class MessagesHandler(MustacheRendering):
         are no new messages.
         """
         try:
-            limit = int(self.get_argument('limit') or 10)
+            limit = int(self.get_argument('limit') or 100)
         except ValueError:
-            limit = 10
+            limit = 100
 
         try:
             id = int(self.get_argument('id') or -1)
@@ -121,8 +164,8 @@ class BufferHandler(MustacheRendering, UserMixin):
         if user:
             message = self.get_argument('message')
             if chat.message(self.db_conn, room, user, message):
-                #self.set_status(204) # no reason to refresh the buffer
-                return self.redirect(self.message.path) # TODO make 204 work
+                #self.set_status(205) # 205 clears forms.
+                return self.redirect(self.message.path) # Nobody supports 205.
             else:
                 self.set_status(400, "Could not send chat")
             return self.render()
@@ -146,7 +189,10 @@ class BufferHandler(MustacheRendering, UserMixin):
 config = {
     'mongrel2_pair': (RECV_SPEC, SEND_SPEC),
     'handler_tuples': [(r'^/$', IndexHandler),
-                       (r'^/(?P<room>[^/]+)/?$', RoomHandler),
+                       (r'^/rooms$', RoomsHandler),
+                       (r'^/create$', CreateHandler),
+                       (r'^/(?P<room>[^/]+)/$', RoomHandler),
+                       (r'^/(?P<room>[^/]+)/users$', UsersHandler),
                        (r'^/(?P<room>[^/]+)/buffer$', BufferHandler),
                        (r'^/(?P<room>[^/]+)/messages$', MessagesHandler)],
     'cookie_secret': COOKIE_SECRET,

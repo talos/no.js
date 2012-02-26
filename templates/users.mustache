@@ -1,14 +1,16 @@
-<!DOCTYPE html>
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Frameset//EN" "http://www.w3.org/TR/html4/frameset.dtd">
 <html>
-  <meta http-equiv="refresh" content="1; url=?id={{id}}" />
-
+  <head>
+    <meta http-equiv="refresh" content="0; url=?id={{id}}" />
+  </head>
   <body>
-    <img src="logo.png" />
+    <img src="/assets/img/logo.png" />
     <h1 id="room">{{room}}</h1>
     <table id="users">
       {{#users}}
-        <tr>
+        <tr class="user">
           <td class="name">{{name}}</td>
+          <td class="ip"><i>{{ip}}</i></td>
         </tr>
       {{/users}}
     </table>
