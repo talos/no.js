@@ -3,7 +3,7 @@
   <body>
     <form action="/{{room}}/buffer" method="post">
       {{#user}}
-        <label for="message">{{user}}</label>
+        <label for="message">{{user}} <small><blink>&gt;</blink></small> </label>
         <input type="text" size="50" name="message" />
         <input type="submit" value="Chat" />
       {{/user}}

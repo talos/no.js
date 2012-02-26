@@ -4,12 +4,14 @@
     <meta http-equiv="refresh" content="0; url=?id={{id}}" />
   </head>
   <body>
-    <img src="/assets/img/logo.gif" height="33" width="118" />
-    <h1 id="room">{{room}}</h1>
+    <a href="/" target="_top">
+      <img src="/assets/img/logo.gif" height="33" width="118" />
+    </a>
+    <h3 id="room">#{{room}}</h3>
     <table id="users">
       {{#users}}
         <tr class="user">
-          <td class="name">{{name}}</td>
+          <td class="name">@{{name}}</td>
           <td class="ip"><i>{{ip}}</i></td>
         </tr>
       {{/users}}

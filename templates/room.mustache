@@ -3,11 +3,11 @@
   <head>
     <title>No.JS Chat: {{room}}</title>
   </head>
-  <frameset rows="*,80px">
+  <frameset rows="*,50px">
     <frameset cols="140px,*">
-      <frame noresize="noresize" src="/{{room}}/users" />
-      <frame noresize="noresize" src="/{{room}}/messages#bottom" />
+      <frame frameborder="0" marginwidth="2" noresize="noresize" src="/{{room}}/users" />
+      <frame frameborder="0" noresize="noresize" src="/{{room}}/messages#bottom" />
     </frameset>
-    <frame noresize="noresize" src="/{{room}}/buffer" />
+    <frame frameborder="0" marginheight="2" noresize="noresize" src="/{{room}}/buffer" />
   </frameset>
 </html> 
