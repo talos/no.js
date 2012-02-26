@@ -25,7 +25,7 @@ if not len(PARSER.read('config.ini')):
         PARSER.add_section(mode)
         PARSER.set(mode, 'db', str(i))
         PARSER.set(mode, 'cookie_secret', str(uuid.uuid4()))
-        PARSER.set(mode, 'longpoll_timeout', '60')
+        PARSER.set(mode, 'longpoll_timeout', '30')
         PARSER.set(mode, 'recv_spec', 'ipc://nojs:1')
         PARSER.set(mode, 'send_spec', 'ipc://nojs:0')
 

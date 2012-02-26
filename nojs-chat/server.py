@@ -2,6 +2,7 @@
 
 import redis
 import chat 
+import urllib2
 from config import DB, COOKIE_SECRET, LONGPOLL_TIMEOUT, SEND_SPEC, RECV_SPEC 
 from templating import load_mustache_env, MustacheRendering
 from brubeck.request_handling import Brubeck 
@@ -19,7 +20,7 @@ class UserMixin():
     def get_user(self, room):
         """
         Get the user for the specified room, or None if the
-        user is not taking part.
+        user is not taking part. The room should NOT be quoted.
         """
         return self.get_cookie(room, None, self.application.cookie_secret)
 
@@ -81,6 +82,7 @@ class RoomHandler(MustacheRendering):
         """
         Render the room frameset (ew).
         """
+        room = urllib2.unquote(room)
         return self.render_template('room', **{'room': room})
 
 
@@ -91,6 +93,7 @@ class UsersHandler(MustacheRendering):
         Render the users currently in the room.  Hangs if nothing has happened
         since ID.
         """
+        room = urllib2.unquote(room)
         try:
             id = int(self.get_argument('id') or -1)
         except ValueError:
@@ -117,6 +120,7 @@ class MessagesHandler(MustacheRendering):
         Render 'limit' messages for this room.  Should hang if there
         are no new messages.
         """
+        room = urllib2.unquote(room)
         try:
             limit = int(self.get_argument('limit') or 100)
         except ValueError:
@@ -149,9 +153,11 @@ class BufferHandler(MustacheRendering, UserMixin):
 
         This will either let them join the room, or say something.
         """
+        user = self.get_user(room)
+        room = urllib2.unquote(room)
         return self.render_template('buffer',
                                     **{ 'room': room,
-                                        'user': self.get_user(room) })
+                                        'user': user })
 
     def post(self, room):
         """
@@ -159,6 +165,7 @@ class BufferHandler(MustacheRendering, UserMixin):
         user is in the chat, or a chat-join otherwise.
         """
         user = self.get_user(room)
+        room = urllib2.unquote(room)
 
         # If they're in the chat, they can send a message
         if user:
@@ -175,7 +182,7 @@ class BufferHandler(MustacheRendering, UserMixin):
             user_name = self.get_argument('user')
             if chat.join(self.db_conn, room, user_name):
                 # Only \w is allowed in room, so this is OK
-                self.set_cookie(room, user_name, self.application.cookie_secret)
+                self.set_cookie(urllib2.quote(room), user_name, self.application.cookie_secret)
                 return self.redirect(self.message.path)
             else:
                 # TODO better rejection handling (common case for dupe names)
