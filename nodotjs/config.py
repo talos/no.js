@@ -4,10 +4,10 @@ import uuid
 
 if len(sys.argv) != 2:
     print """
-Nojs-chat must be invoked with a single argument, telling it
+Nodotjs must be invoked with a single argument, telling it
 which mode from `config.ini` to use:
 
-python nojs-chat/server.py <MODE>
+python nodotjs/server.py <MODE>
 
 Look at `config.ini` for defined modes. Defaults are `production`,
 `staging`, and `test`."""
@@ -26,8 +26,8 @@ if not len(PARSER.read('config.ini')):
         PARSER.set(mode, 'db', str(i))
         PARSER.set(mode, 'cookie_secret', str(uuid.uuid4()))
         PARSER.set(mode, 'longpoll_timeout', '30')
-        PARSER.set(mode, 'recv_spec', 'ipc://nojs:1')
-        PARSER.set(mode, 'send_spec', 'ipc://nojs:0')
+        PARSER.set(mode, 'recv_spec', 'ipc://nodotjs:1')
+        PARSER.set(mode, 'send_spec', 'ipc://nodotjs:0')
 
     try:
         conf = open('config.ini', 'w')
