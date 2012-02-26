@@ -1,4 +1,4 @@
-[!No.JS](http://nojs.accursedware.com/assets/img/logo.gif)
+![No.JS](http://nojs.accursedware.com/assets/img/logo.gif)
 
 # No.JS Chat 
 
