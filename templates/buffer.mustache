@@ -1,18 +1,36 @@
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Frameset//EN" "http://www.w3.org/TR/html4/frameset.dtd">
 <html>
   <body>
-    <hr size="1" width="100%" noshade="noshade">
-    <form action="/{{room}}/buffer" method="post">
-      {{#user}}
-        <label for="message">{{user}} <small><blink>&gt;</blink></small> </label>
-        <input type="text" size="50" name="message" />
+    <hr size="1" noshade="noshade" width="100%">  
+
+    {{! If they don't have a name, they have to get one.}}
+    {{^user}}
+    <form action="/buffer" method="post">
+      <label for="user">Register your name: </label>
+      <input type="text" autofocus="autofocus" maxlength="15" size="15" name="register"  />
+      {{#room}}
+        <input type="hidden" name="room" value="{{room}}" />
+      {{/room}}
+      <input type="submit" value="Register" />
+    {{/user}}
+    {{#user}}
+      {{! If they're in a room, they can speak.}}
+      {{#room}}
+      <form action="/buffer" method="post">
+        <label for="message">{{user}} <small>&gt;</small> </label>
+        <input type="text" autofocus="autofocus" size="70" name="message"  />
+        <input type="hidden" name="room" value="{{room}}" />
         <input type="submit" value="Chat" />
-      {{/user}}
-      {{^user}}
-        <label for="user">Enter your name to join the room:</label>
-        <input type="text" maxlength="15" size="15" name="user" />
+      {{/room}}
+      {{! Otherwise, they can 'create' rooms. }}
+      {{^room}}
+      <form action="/buffer" method="post" target="_parent">
+        <label for="room">{{user}} <small>&gt;</small> Join or create a room: </label>
+        <input type="text" autofocus="autofocus" size="15" maxlength="15" name="join"  />
         <input type="submit" value="Join" />
-      {{/user}}
+      {{/room}}
+    {{/user}}
+    {{#error}}<label id="error">{{error}}</label>{{/error}}
     </form>
   </body>
 </html> 

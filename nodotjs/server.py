@@ -3,26 +3,61 @@
 import redis
 import chat 
 import urllib2
-from config import DB, COOKIE_SECRET, LONGPOLL_TIMEOUT, SEND_SPEC, RECV_SPEC 
+from config import DB, COOKIE_SECRET, TIMEOUT, SEND_SPEC, RECV_SPEC 
 from templating import load_mustache_env, MustacheRendering
 from brubeck.request_handling import Brubeck 
 
 try:
+    import gevent as coro_lib
     import gevent.timeout as timeout
 except ImportError:
+    import eventlet as coro_lib
     import eventlet.timeout as timeout
+
+TTL = TIMEOUT * 2
 
 #
 # MIXINS
 #
 class UserMixin():
 
-    def get_user(self, room):
+    def get_user(self, room=None):
         """
-        Get the user for the specified room, or None if the
-        user is not taking part. The room should NOT be quoted.
+        Get the user's current name, or None if they've never signed in or
+        have an expired cookie.
         """
-        return self.get_cookie(room, None, self.application.cookie_secret)
+        name = self.get_cookie('name', None)
+        secret = self.get_cookie('secret', None, self.application.cookie_secret)
+        if name and secret and chat.validate(self.db_conn, name, secret):
+            return name
+        return None
+
+    def register_user(self, name):
+        """
+        Register a user.  Returns True if the user was registered, False
+        otherwise.
+        """
+        secret = chat.register(self.db_conn, name, ip=self.message.remote_addr)
+        if secret:
+            self.set_cookie('name', name)
+            # encoded cookie, folks.  nothing to see here.
+            self.set_cookie('secret', secret, self.application.cookie_secret)
+            return True
+        else:
+            return False
+
+class IdMixin():
+
+    def get_id(self):
+        """
+        Get the ID from the arguments list, coerce it to an int if
+        possible.  Otherwise, return None.
+        """
+        id = self.get_argument('id')
+        try:
+            return int(id) if id else None
+        except ValueError:
+            return None
 
 
 #
@@ -37,43 +72,75 @@ class IndexHandler(MustacheRendering):
         return self.render_template('index')
 
 
-class RoomsHandler(MustacheRendering):
+class RoomsHandler(MustacheRendering, IdMixin, UserMixin):
 
     def get(self):
         """
         List all rooms currently available.  Hangs until the number of rooms
         changes.
+
+        This also works as a poll to keep a user in existence.
         """
-        try:
-            id = int(self.get_argument('id') or -1)
-        except ValueError:
-            id = -1
+        id = self.get_id()
+        user = self.get_user()
+        if user:
+            chat.touch(self.db_conn, user, TTL)
 
         try:
-            id, rooms = timeout.with_timeout(
-                LONGPOLL_TIMEOUT,
-                chat.rooms(self.db_conn, id=id).next)
+            id, rooms = timeout.with_timeout(TIMEOUT, chat.rooms, self.db_conn, id)
+            #self.headers['Refresh'] = refresh
             context = {
-                'id': id,
+                'refresh': "0; url=?id=%d" % id, 
                 'rooms': rooms
             }
             return self.render_template('rooms', **context)
         except timeout.Timeout:
-            return self.redirect(self.message.path)
+            return self.redirect('?')
 
-
-class CreateHandler(MustacheRendering):
+class BufferHandler(MustacheRendering, UserMixin):
+ 
+    def _get_context(self):
+        return { 'user': self.get_user(), 'room': self.get_argument('room')}
 
     def get(self):
         """
-        'Create' the room by forwarding to it if the parameter is specified,
-        otherwise render the create room template.
+        Render the buffer for the user.
         """
-        room = self.get_argument('room')
-        if room:
-            return self.redirect('/%s/' % room)
+        return self.render_template('buffer', **self._get_context())
+
+    def post(self):
+        """
+        Handle a post to the buffer form.
+        """
+        context = self._get_context()
+        register = self.get_argument('register')
+        message = self.get_argument('message')
+        join = self.get_argument('join')
+        user = context['user']
+
+        if register:
+            if self.register_user(register):
+                chat.touch(self.db_conn, register, TTL, context['room'])
+                context['user'] = register
+            else:
+                context['error'] = "Name '%s' is taken." % register 
+                # self.set_status(400, "Name '%s' is taken" % name)
+        elif not user:
+            context['error'] = 'You are no longer logged in.'
+        elif message:
+            if chat.message(self.db_conn, context['room'], user, message):
+                #self.set_status(205) # 205 clears forms. Nobody supports it
+                pass
+            else:
+                context['error'] = "Could not send message."
+                # self.set_status(400, "Could not send message")
+        # Joining a room changes the frameset and URL, so it requires redirect.
+        elif join:
+            return self.redirect('/%s/' % join)
         else:
-            return self.render_template('create')
+            pass
+
+        return self.render_template('buffer', **context)
 
 
 class RoomHandler(MustacheRendering):
@@ -86,34 +153,34 @@ class RoomHandler(MustacheRendering):
         return self.render_template('room', **{'room': room})
 
 
-class UsersHandler(MustacheRendering):
+class UsersHandler(MustacheRendering, UserMixin, IdMixin):
 
     def get(self, room):
         """
         Render the users currently in the room.  Hangs if nothing has happened
         since ID.
+
+        This also functions as a poll for whether a user is still in a room.
         """
         room = urllib2.unquote(room)
+        user = self.get_user()
+        if user:
+            chat.touch(self.db_conn, user, TTL, room)
+        id = self.get_id()
         try:
-            id = int(self.get_argument('id') or -1)
-        except ValueError:
-            id = -1
-
-        try:
-            id, users = timeout.with_timeout(
-                LONGPOLL_TIMEOUT,
-                chat.users(self.db_conn, room, id=id).next)
+            id, users = timeout.with_timeout(TIMEOUT, chat.users, self.db_conn, room, id=id)
+            #self.headers['Refresh'] = refresh
             context = {
-                'id': id,
                 'room': room,
-                'users': users 
+                'users': users,
+                'refresh': "0; url=?id=%d" % id 
             }
             return self.render_template('users', **context)
         except timeout.Timeout:
-            return self.redirect(self.message.path)
+            return self.redirect('?')
 
 
-class MessagesHandler(MustacheRendering):
+class MessagesHandler(MustacheRendering, UserMixin, IdMixin):
 
     def get(self, room):
         """
@@ -121,74 +188,40 @@ class MessagesHandler(MustacheRendering):
         are no new messages.
         """
         room = urllib2.unquote(room)
-        try:
-            limit = int(self.get_argument('limit') or 100)
-        except ValueError:
-            limit = 100
+        user = self.get_user()
+        if user:
+            chat.touch(self.db_conn, user, TTL, room)
+        id = self.get_id()
 
         try:
-            id = int(self.get_argument('id') or -1)
+            limit = int(self.get_argument('limit') or 25)
         except ValueError:
-            id = -1
+            limit = 25 
 
         try:
-            id, messages = timeout.with_timeout(
-                LONGPOLL_TIMEOUT,
-                chat.messages(self.db_conn, room, limit=limit, id=id).next)
+            id, messages = timeout.with_timeout(TIMEOUT,
+                                                chat.messages,
+                                                self.db_conn,
+                                                room,
+                                                limit=limit, id=id)
             context = {
-                'id': id,
-                'room': room,
-                'messages': messages
+                'refresh': "0; url=?id=%d#bottom" % id,
+                'messages': messages,
+                'room': room
             }
             return self.render_template('messages', **context)
+            #self.headers['Refresh'] = refresh
         except timeout.Timeout:
-            return self.redirect(self.message.path + '#bottom')
+            return self.redirect('?#bottom') 
 
 
-class BufferHandler(MustacheRendering, UserMixin):
- 
-    def get(self, room):
-        """
-        Render the buffer for the user in their current room.
-
-        This will either let them join the room, or say something.
-        """
-        user = self.get_user(room)
-        room = urllib2.unquote(room)
-        return self.render_template('buffer',
-                                    **{ 'room': room,
-                                        'user': user })
-
-    def post(self, room):
-        """
-        Handle a post to the buffer form.  This should be a message if the
-        user is in the chat, or a chat-join otherwise.
-        """
-        user = self.get_user(room)
-        room = urllib2.unquote(room)
-
-        # If they're in the chat, they can send a message
-        if user:
-            message = self.get_argument('message')
-            if chat.message(self.db_conn, room, user, message):
-                #self.set_status(205) # 205 clears forms.
-                return self.redirect(self.message.path) # Nobody supports 205.
-            else:
-                self.set_status(400, "Could not send chat")
-            return self.render()
-
-        # Otherwise, they can join the chat
-        else:
-            user_name = self.get_argument('user')
-            if chat.join(self.db_conn, room, user_name):
-                # Only \w is allowed in room, so this is OK
-                self.set_cookie(urllib2.quote(room), user_name, self.application.cookie_secret)
-                return self.redirect(self.message.path)
-            else:
-                # TODO better rejection handling (common case for dupe names)
-                self.set_status(400, "Could not add %s to room" % user_name)
-                return self.render()
-
+def drain(db_conn):
+    """
+    Flush the database occasionally.
+    """
+    while True:
+        chat.flush(db_conn)
+        coro_lib.sleep(TIMEOUT) 
 
 #
 # RUN BRUBECK RUN
@@ -197,10 +230,9 @@ config = {
     'mongrel2_pair': (RECV_SPEC, SEND_SPEC),
     'handler_tuples': [(r'^/$', IndexHandler),
                        (r'^/rooms$', RoomsHandler),
-                       (r'^/create$', CreateHandler),
-                       (r'^/(?P<room>[^/]+)/$', RoomHandler),
+                       (r'^/buffer$', BufferHandler),
+                       (r'^/(?P<room>[^/]+)/?$', RoomHandler),
                        (r'^/(?P<room>[^/]+)/users$', UsersHandler),
-                       (r'^/(?P<room>[^/]+)/buffer$', BufferHandler),
                        (r'^/(?P<room>[^/]+)/messages$', MessagesHandler)],
     'cookie_secret': COOKIE_SECRET,
     'db_conn': redis.StrictRedis(db=DB),
@@ -208,4 +240,6 @@ config = {
 }
 
 opengold = Brubeck(**config)
+toilet = opengold.pool.spawn(drain, opengold.db_conn)
 opengold.run()
+toilet.kill()

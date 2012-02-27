@@ -1,15 +1,20 @@
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Frameset//EN" "http://www.w3.org/TR/html4/frameset.dtd">
 <html>
   <head>
-    <meta http-equiv="refresh" content="0; url=?id={{id}}#bottom" />
+    <meta http-equiv="refresh" content="{{refresh}}" />
   </head>
   <body>
     <table id="messages">
       {{#messages}}
         <tr>
           <td class="time"><i>{{time}}</i></td>
+          {{#user}}
           <td class="user"><b>{{user}}:</b></td>
           <td class="message">{{message}}</td>
+          {{/user}}
+          {{^user}}
+          <td colspan="2"><em>{{message}}</em></td>
+          {{/user}}
         </tr>
       {{/messages}}
     </table>

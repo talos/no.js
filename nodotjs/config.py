@@ -25,7 +25,7 @@ if not len(PARSER.read('config.ini')):
         PARSER.add_section(mode)
         PARSER.set(mode, 'db', str(i))
         PARSER.set(mode, 'cookie_secret', str(uuid.uuid4()))
-        PARSER.set(mode, 'longpoll_timeout', '30')
+        PARSER.set(mode, 'timeout', '30')
         PARSER.set(mode, 'recv_spec', 'ipc://nodotjs:1')
         PARSER.set(mode, 'send_spec', 'ipc://nodotjs:0')
 
@@ -39,7 +39,7 @@ if not len(PARSER.read('config.ini')):
 
 DB = int(PARSER.get(MODE, 'db'))
 COOKIE_SECRET = PARSER.get(MODE, 'cookie_secret')
-LONGPOLL_TIMEOUT = int(PARSER.get(MODE, 'longpoll_timeout'))
+TIMEOUT = int(PARSER.get(MODE, 'timeout'))
 RECV_SPEC = PARSER.get(MODE, 'recv_spec')
 SEND_SPEC = PARSER.get(MODE, 'send_spec')
 

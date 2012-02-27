@@ -1,10 +1,14 @@
 import json
 import time
+import uuid
 
 # REDIS KEYS
 ROOMS = 'rooms'
 USERS = 'users'
 MESSAGES = 'messages'
+IP = 'ip'
+TIMESTAMP = 'timestamp'
+SECRET= 'secret'
 
 # JSON KEYS
 ID = 'id'
@@ -19,106 +23,154 @@ def path(key, *path):
     """
     return ':'.join([key] + list(path))
 
-def join(r, room, user):
+def validate(r, user, secret):
     """
-    Join a room. Creates the room if it does not yet exist.
-
-    Returns False if the user could not join, True otherwise.
+    Validate whether a user's secret is right.
     """
-
-    # Create the room
-    if r.sadd(path(ROOMS), room) == 1:
-        r.publish(path(ROOMS), room)
-
-    # Join the room
-    if r.sadd(path(ROOMS, room, USERS), user) == 1:
-        r.publish(path(ROOMS, room, USERS), user)
+    if r.hget(path(USERS, user), SECRET) == secret:
         return True
     else:
         return False
+
+def touch(r, user, ttl, room=None):
+    """
+    Indicate that a user is active, optionally in a room.
+    """
+    r.expire(path(USERS, user), ttl)
+    if room:
+        # If the room is new, send out a notification
+        if r.sadd(path(ROOMS), room) == 1:
+            _create_room(r, room)
+        r.expire(path(ROOMS, room), ttl)
+
+        # If the user is new, send out a notification
+        if r.sadd(path(ROOMS, room, USERS), user) == 1:
+            _join_room(r, room, user)
+        r.expire(path(ROOMS, room, USERS, user), ttl)
+
+def register(r, user, ip=None): # todo IP
+    """
+    Register a user.
+
+    Returns a secret for the user if they can register, or None otherwise.
+    """
+    if r.exists(path(USERS, user)):
+        return None
+    else:
+        secret = str(uuid.uuid4())
+        _register_user(r, user, ip, secret)
+        return secret
 
 def message(r, room, user, message):
     """
     Broadcast chat message to all users. Garbage in, garbage out --
     make sure to protect against XSS outside of this.
 
+    User 'None' is interpreted as a system message.
+
     Returns True if the message was submitted, False otherwise.
     """
-    if r.sismember(path(ROOMS, room, USERS), user):
-        r.rpush(path(ROOMS, room, MESSAGES), json.dumps({
-            USER: user,
+    if (user is None) or r.exists(path(ROOMS, room, USERS, user)):
+        p = path(ROOMS, room, MESSAGES)
+        r.rpush(p, json.dumps({
+            USER:    user,
             MESSAGE: message,
-            TIME: time.strftime('%X') 
+            TIME:    time.strftime('%X') 
         }))
-        r.publish(path(ROOMS, room, MESSAGES), room)
+        r.publish(p, room)
         return True
     else:
         return False
 
-def rooms(r, id=-1):
+def rooms(r, id=None):
     """
-    Returns a generator that will yield a new ID and an array of rooms when
-    the number of rooms changes.
+    Returns a new ID and an array of rooms when the number of rooms changes.
     """
-    pubsub = r.pubsub()
-    pubsub.subscribe(path(ROOMS))
+    # Block waiting for something to change
+    p = path(ROOMS)
+    if id == r.scard(p):
+        pubsub = r.pubsub()
+        pubsub.subscribe(p)
+        pubsub.listen().next()
+    # It's possible for the listener to break us out without changing ID
+    return r.scard(p), [{ NAME: room,
+                          USERS: r.scard(path(ROOMS, room, USERS)) }
+                       for room in r.smembers(p)]
 
-    listener = pubsub.listen()
-
-    while True:
-        cur_id = r.scard(path(ROOMS))
-
-        # Block waiting for an update
-        if id == cur_id and id != -1:
-            listener.next()
-        else:
-            id = cur_id
-            yield id, [{ NAME: room,
-                         USERS: r.scard(path(ROOMS, room, USERS)) }
-                      for room in r.smembers(path(ROOMS))]
-
-def users(r, room, id=-1):
+def users(r, room, id=None):
     """
-    Returns a generator that will yield a new ID and an array of users when the
-    user list changes.
+    This returns a new ID and an array of users when the ID changes.
     """
-    pubsub = r.pubsub()
-    pubsub.subscribe(path(ROOMS, room, USERS))
+    # Block waiting for something to change
+    p = path(ROOMS, room, USERS)
+    if id == r.scard(p):
+        pubsub = r.pubsub()
+        pubsub.subscribe(p)
+        pubsub.listen().next()
+    return r.scard(p), [{ NAME: name } for name in r.smembers(p)]
 
-    listener = pubsub.listen()
-
-    while True:
-        cur_id = r.scard(path(ROOMS, room, USERS))
-
-        # Since user count varies up and down, check equality 
-        if id == cur_id and id != -1:
-            listener.next()
-        else:
-            id = cur_id
-            yield id, [{ NAME: name } 
-                       for name in r.smembers(path(ROOMS, room, USERS))]
-
-def messages(r, room, id=-1, limit=50):
+def messages(r, room, id=None, limit=25):
     """
-    Returns a generator that will yield a new ID and an array of chat messages
-    when a new message occurs.
+    Returns a new ID and an array of messages when a new message occurs.
 
-    If the room doesn't exist, will initially yield a notice that the
-    room doesn't exist.
+    Max of limit messages are returned.
     """
-    pubsub = r.pubsub()
-    pubsub.subscribe(path(ROOMS, room, MESSAGES))
+    # Block waiting for an update to generate something newer
+    p = path(ROOMS, room, MESSAGES)
+    if id == r.llen(p):
+        pubsub = r.pubsub()
+        pubsub.subscribe(p)
+        pubsub.listen().next()
+    # Components are already in JSON.
+    return r.llen(p), [json.loads(j) for j in r.lrange(p, -limit, -1)]
 
-    listener = pubsub.listen()
+def flush(r):
+    """
+    Chuck out expired users and rooms. This should be run at approximately
+    the same interval as the timeout.
+    """
+    users = r.smembers(path(USERS))
+    for user in users:
+        if not r.exists(path(USERS, user)):
+            _kill_user(r, user)
 
-    while True:
-        cur_id = r.llen(path(ROOMS, room, MESSAGES))
+    rooms = r.smembers(path(ROOMS))
+    for room in rooms:
+        for user in r.smembers(path(ROOMS, room, USERS)):
+            if not r.exists(path(ROOMS, room, USERS, user)):
+                _leave_room(r, room, user)
+        if r.scard(path(ROOMS, room, USERS)) == 0:
+            _destroy_room(r, room)
 
-        # Block waiting for an update to generate something newer
-        if id >= cur_id:
-            listener.next()
-        else:
-            id = cur_id
-            # Components are already in JSON.
-            yield id, [json.loads(j)
-                       for j in r.lrange(path(ROOMS, room, MESSAGES), -limit, -1)]
+def _create_room(r, room):
+    r.hmset(path(ROOMS, room), { TIMESTAMP: time.time() } )
+    r.publish(path(ROOMS), room)
+
+def _destroy_room(r, room):
+    p = path(ROOMS)
+    r.srem(p, room)
+    r.publish(p, room)
+
+def _join_room(r, room, user):
+    r.hmset(path(ROOMS, room, USERS, user), { TIMESTAMP: time.time() })
+    r.publish(path(ROOMS, room, USERS), user)
+    message(r, room, None, '%s has joined the room.' % user)
+
+def _leave_room(r, room, user):
+    p = path(ROOMS, room, USERS)
+    r.srem(p, user)
+    r.publish(p, user)
+    message(r, room, None, '%s has left the room.' % user)
+
+def _register_user(r, user, ip, secret):
+    r.hmset(path(USERS, user), {IP: ip,
+                                TIMESTAMP: time.time(),
+                                SECRET: secret})
+    p = path(USERS)
+    r.sadd(p, user)
+    r.publish(p, user)
+
+def _kill_user(r, user):
+    p = path(USERS)
+    r.srem(p, user)
+    r.publish(p, user)
