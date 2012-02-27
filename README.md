@@ -1,4 +1,4 @@
-![No (dot) JS](http://nojs.accursedware.com/assets/img/logo.gif)
+![No (dot) JS](http://www.nodotjs.com/assets/img/logo.gif)
 
 # No (dot) JS Chat 
 
@@ -8,4 +8,4 @@
 
 Forked from [opengold](http://www.github.com/talos/opengold).
 
-See it [in action](http://nodotjs.accursedware.com/).
+See it [in action](http://www.nodotjs.com/).
