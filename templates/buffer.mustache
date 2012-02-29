@@ -6,7 +6,7 @@
     {{! If they don't have a name, they have to get one.}}
     {{^user}}
     <form action="/buffer" method="post">
-      <label for="user">Register your name: </label>
+      <label for="user">Register your name: @</label>
       <input type="text" autofocus="autofocus" maxlength="15" size="15" name="register"  />
       {{#room}}
         <input type="hidden" name="room" value="{{room}}" />
@@ -25,7 +25,7 @@
       {{! Otherwise, they can 'create' rooms. }}
       {{^room}}
       <form action="/buffer" method="post" target="_parent">
-        <label for="room">{{user}} <small>&gt;</small> Join or create a room: </label>
+        <label for="room">{{user}} <small>&gt;</small> Join or create a room: #</label>
         <input type="text" autofocus="autofocus" size="15" maxlength="15" name="join"  />
         <input type="submit" value="Join" />
       {{/room}}
