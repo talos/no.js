@@ -17,7 +17,7 @@
       {{! If they're in a room, they can speak.}}
       {{#room}}
       <form action="/buffer" method="post">
-        <label for="message">{{user}} <small>&gt;</small> </label>
+        <label for="message">@{{user}} <small>&gt;</small> </label>
         <input type="text" autofocus="autofocus" size="70" name="message"  />
         <input type="hidden" name="room" value="{{room}}" />
         <input type="submit" value="Chat" />
@@ -25,7 +25,7 @@
       {{! Otherwise, they can 'create' rooms. }}
       {{^room}}
       <form action="/buffer" method="post" target="_parent">
-        <label for="room">{{user}} <small>&gt;</small> Join or create a room: #</label>
+        <label for="room">@{{user}} <small>&gt;</small> Join or create a room: #</label>
         <input type="text" autofocus="autofocus" size="15" maxlength="15" name="join"  />
         <input type="submit" value="Join" />
       {{/room}}
