@@ -3,6 +3,7 @@
 import redis
 import chat 
 import urllib2
+import json
 from config import DB, COOKIE_SECRET, TIMEOUT, SEND_SPEC, RECV_SPEC 
 from templating import load_mustache_env, MustacheRendering
 from brubeck.request_handling import Brubeck 
@@ -26,10 +27,15 @@ class UserMixin():
         Get the user's current name, or None if they've never signed in or
         have an expired cookie.
         """
-        name = self.get_cookie('name', None)
-        secret = self.get_cookie('secret', None, self.application.cookie_secret)
-        if name and secret and chat.validate(self.db_conn, name, secret):
-            return name
+        # tsung doesn't handle multiple set-cookies correctly, so this is
+        # compressed into one now.
+        cookie = self.get_cookie('session', None, self.application.cookie_secret)
+        if cookie:
+            try:
+                name, secret = json.loads(cookie)
+                return name if chat.validate(self.db_conn, name, secret) else None
+            except ValueError:
+                pass
         return None
 
     def register_user(self, name):
@@ -39,9 +45,7 @@ class UserMixin():
         """
         secret = chat.register(self.db_conn, name, ip=self.message.remote_addr)
         if secret:
-            self.set_cookie('name', name)
-            # encoded cookie, folks.  nothing to see here.
-            self.set_cookie('secret', secret, self.application.cookie_secret)
+            self.set_cookie('session', json.dumps([name, secret]), self.application.cookie_secret)
             return True
         else:
             return False
@@ -117,30 +121,33 @@ class BufferHandler(MustacheRendering, UserMixin):
         message = self.get_argument('message')
         join = self.get_argument('join')
         user = context['user']
+        status = 200
 
         if register:
             if self.register_user(register):
                 chat.touch(self.db_conn, register, TTL, context['room'])
                 context['user'] = register
             else:
-                context['error'] = "Name '%s' is taken." % register 
-                # self.set_status(400, "Name '%s' is taken" % name)
+                context['error'] = "Name '%s' is taken." % register
+                status = 403
         elif not user:
             context['error'] = 'You are no longer logged in.'
+            status = 403 
         elif message:
             if chat.message(self.db_conn, context['room'], user, message):
                 #self.set_status(205) # 205 clears forms. Nobody supports it
                 pass
             else:
                 context['error'] = "Could not send message."
-                # self.set_status(400, "Could not send message")
+                status = 403
         # Joining a room changes the frameset and URL, so it requires redirect.
         elif join:
+            chat.touch(self.db_conn, user, TTL, join)
             return self.redirect('/%s/' % join)
         else:
             pass
 
-        return self.render_template('buffer', **context)
+        return self.render_template('buffer', _status_code=status, **context)
 
 
 class RoomHandler(MustacheRendering):
