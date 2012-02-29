@@ -4,8 +4,8 @@
 
 ### Real-time chat, nary a line of client side code. 
 
-##### IE4-tested, mother approved. Mosaic support coming soon.
+##### IE4-tested, mother approved.
 
-Forked from [opengold](http://www.github.com/talos/opengold).
+[Read](http://blog.accursedware.com/html-only-live-chat:-No.JS/) about it.
 
 See it [in action](http://www.nodotjs.com/).
