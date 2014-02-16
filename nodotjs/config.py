@@ -26,8 +26,7 @@ if not len(PARSER.read('config.ini')):
         PARSER.set(mode, 'db', str(i))
         PARSER.set(mode, 'cookie_secret', str(uuid.uuid4()))
         PARSER.set(mode, 'timeout', '30')
-        PARSER.set(mode, 'recv_spec', 'ipc://nodotjs:1')
-        PARSER.set(mode, 'send_spec', 'ipc://nodotjs:0')
+        PARSER.set(mode, 'port', '7000')
 
     try:
         conf = open('config.ini', 'w')
@@ -40,6 +39,4 @@ if not len(PARSER.read('config.ini')):
 DB = int(PARSER.get(MODE, 'db'))
 COOKIE_SECRET = PARSER.get(MODE, 'cookie_secret')
 TIMEOUT = int(PARSER.get(MODE, 'timeout'))
-RECV_SPEC = PARSER.get(MODE, 'recv_spec')
-SEND_SPEC = PARSER.get(MODE, 'send_spec')
-
+PORT = int(PARSER.get(MODE, 'port'))

@@ -1,0 +1,5 @@
+brubeck==0.4.0
+gevent==0.13.6
+greenlet==0.3.2
+pystache==0.5.3
+redis==2.4.11

@@ -1,16 +1,20 @@
 #!/usr/bin/env python
 
 import redis
-import chat 
+import chat
 import urllib2
 import json
-from config import DB, COOKIE_SECRET, TIMEOUT, SEND_SPEC, RECV_SPEC 
-from templating import load_mustache_env, MustacheRendering
-from brubeck.request_handling import Brubeck 
+from config import DB, COOKIE_SECRET, TIMEOUT, PORT
+
+from brubeck.connections import WSGIConnection
+from brubeck.request_handling import Brubeck
+from brubeck.templating import load_mustache_env, MustacheRendering
 
 try:
     import gevent as coro_lib
+    coro_lib
     import gevent.timeout as timeout
+    timeout
 except ImportError:
     import eventlet as coro_lib
     import eventlet.timeout as timeout
@@ -234,7 +238,7 @@ def drain(db_conn):
 # RUN BRUBECK RUN
 #
 config = {
-    'mongrel2_pair': (RECV_SPEC, SEND_SPEC),
+    'msg_conn': WSGIConnection(port=PORT),
     'handler_tuples': [(r'^/$', IndexHandler),
                        (r'^/rooms$', RoomsHandler),
                        (r'^/buffer$', BufferHandler),
